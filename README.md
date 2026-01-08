@@ -62,6 +62,8 @@ Tired of phishing emails slipping through? Want an AI assistant that reads your 
 - **Newsletters** - Grouped by source
 - **Quarantined** - Brief mention of blocked threats
 
+**[View Sample Briefing →](docs/sample-briefing.html)**
+
 ## Quick Start
 
 ```bash
