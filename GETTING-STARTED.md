@@ -81,25 +81,34 @@ ls -la ~/.claude/
 echo "Hello, can you respond?" | claude --print
 ```
 
-### Fix Credentials Permissions
+### Copy Credentials to Project
 
-The containers run as the `vmail` user (UID/GID 5000). The credentials file must be readable by this group:
+After authenticating, Claude stores your credentials at `~/.claude/.credentials.json`. Copy this file to the project's secrets folder:
 
 ```bash
-# SECURITY: Set group to vmail (5000) and restrict permissions
-sudo chgrp 5000 ~/.claude/.credentials.json
-chmod 640 ~/.claude/.credentials.json
+# Create secrets directory if needed
+mkdir -p /path/to/postal-inspector/secrets
 
-# Verify: should show -rw-r----- with group 5000
-ls -la ~/.claude/.credentials.json
+# Copy credentials file
+cp ~/.claude/.credentials.json /path/to/postal-inspector/secrets/claude-credentials.json
+
+# Set secure permissions (readable by owner and vmail group)
+chmod 640 /path/to/postal-inspector/secrets/claude-credentials.json
 ```
 
-This makes the file readable by:
-- Your user (owner)
-- The container's vmail user (via group 5000)
-- NOT readable by other users on the system
+**Important**: The docker-compose mounts `./secrets/claude-credentials.json` into the AI scanner and daily briefing containers. This file must exist before starting the stack. The install script will sync this to `/opt/postal-inspector/secrets/` during installation.
 
-The `~/.claude/.credentials.json` file will be mounted into the containers (read-only) to provide authentication.
+**What's in the credentials file**: This JSON file contains your OAuth tokens from the Claude authentication. It looks like:
+
+```json
+{
+  "claudeAiOauth": {
+    "accessToken": "...",
+    "refreshToken": "...",
+    "expiresAt": "..."
+  }
+}
+```
 
 ---
 
