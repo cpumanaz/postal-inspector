@@ -6,10 +6,29 @@ Tired of phishing emails slipping through? Want an AI assistant that reads your 
 
 ## Why Mail Stack?
 
-- **Your email, your server** - No third-party scanning your messages
-- **AI catches what spam filters miss** - Typosquatting, social engineering, credential harvesting
-- **Start your day informed** - Beautiful HTML briefing categorizing what needs attention
-- **Simple Docker deployment** - One `make up` and you're running
+### Smarter Threat Detection
+
+Traditional spam filters use rules and blocklists. They catch obvious spam but miss sophisticated attacks. Claude AI actually *reads* your email and *reasons* about it:
+
+- "This email claims to be from Microsoft but the domain is `micros0ft.com`"
+- "The sender says they're your CEO, but they're asking for gift cards via a Gmail address"
+- "This 'invoice' attachment has an unusual filename pattern common in malware"
+
+**Rule-based filters see patterns. AI understands intent.**
+
+### Your Personal Email Assistant
+
+Every morning, you get a briefing that took AI 2 minutes to write but saves you 20 minutes of inbox scanning:
+
+- What needs a response today
+- Who emailed that actually matters to you
+- What got blocked and why
+
+**Like having an executive assistant read your email first.**
+
+### Privacy by Design
+
+Your email stays on your infrastructure. No third-party cloud scanning your messages, no ad targeting, no selling your data. You control the server, the storage, and who has access.
 
 ## How It Works
 
@@ -117,11 +136,7 @@ make status        # Check service health
 
 ## Cost
 
-| Usage | Estimated Cost |
-|-------|----------------|
-| Per email scan | ~$0.001-0.01 |
-| Daily briefing | ~$0.01-0.05 |
-| 100 emails/day | ~$1-3/month |
+Mail Stack uses [Claude Code](https://github.com/anthropics/claude-code), which requires a Claude subscription (Pro, Max, or Max 200). Your existing subscription covers the AI scanning and briefings - no additional API costs.
 
 ## Documentation
 
