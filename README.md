@@ -1,10 +1,10 @@
-# Mail Stack
+# Postal Inspector
 
 **AI-powered self-hosted email server with intelligent threat detection and daily briefings.**
 
-Tired of phishing emails slipping through? Want an AI assistant that reads your inbox and tells you what matters? Mail Stack pulls mail from your existing provider (Gmail, O365, Fastmail, etc.) into your own secure server, where Claude AI scans every message for threats and sends you a personalized daily summary.
+Tired of phishing emails slipping through? Want an AI assistant that reads your inbox and tells you what matters? Postal Inspector pulls mail from your existing provider (Gmail, O365, Fastmail, etc.) into your own secure server, where Claude AI scans every message for threats and sends you a personalized daily summary.
 
-## Why Mail Stack?
+## Why Postal Inspector?
 
 ### Smarter Threat Detection
 
@@ -87,8 +87,8 @@ Your email stays on your infrastructure. No third-party cloud scanning your mess
 
 ```bash
 # Clone and configure
-git clone https://github.com/yourusername/mail-stack.git
-cd mail-stack
+git clone https://github.com/yourusername/postal-inspector.git
+cd postal-inspector
 cp .env.example .env
 nano .env  # Add your upstream IMAP credentials
 
@@ -136,7 +136,7 @@ make status        # Check service health
 
 ## Cost
 
-Mail Stack uses [Claude Code](https://github.com/anthropics/claude-code), which requires a Claude subscription (Pro, Max, or Max 200). Your existing subscription covers the AI scanning and briefings - no additional API costs.
+Postal Inspector uses [Claude Code](https://github.com/anthropics/claude-code), which requires a Claude subscription (Pro, Max, or Max 200). Your existing subscription covers the AI scanning and briefings - no additional API costs.
 
 ## Documentation
 

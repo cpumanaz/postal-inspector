@@ -1,11 +1,11 @@
 [Unit]
-Description=Mail Stack Backup
-After=mail-stack.service
-Requires=mail-stack.service
+Description=Postal Inspector Backup
+After=postal-inspector.service
+Requires=postal-inspector.service
 
 [Service]
 Type=oneshot
-ExecStart=/opt/mail-stack/scripts/backup.sh
+ExecStart=/opt/postal-inspector/scripts/backup.sh
 User=root
 Group=root
 

@@ -2,7 +2,7 @@
 
 help:
 	@echo "╔══════════════════════════════════════════════════════════════╗"
-	@echo "║           mail-stack - AI-Powered Email Server               ║"
+	@echo "║         Postal Inspector - AI-Powered Email Server           ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@echo ""
 	@echo "  make up            Start all services"

@@ -1,6 +1,6 @@
-# Getting Started with Mail Stack
+# Getting Started with Postal Inspector
 
-This guide walks you through setting up Mail Stack from scratch. By the end, you'll have an AI-powered email server that fetches mail from your existing provider, scans it for threats, and delivers daily intelligent summaries.
+This guide walks you through setting up Postal Inspector from scratch. By the end, you'll have an AI-powered email server that fetches mail from your existing provider, scans it for threats, and delivers daily intelligent summaries.
 
 ## Table of Contents
 
@@ -8,7 +8,7 @@ This guide walks you through setting up Mail Stack from scratch. By the end, you
 2. [Install Claude CLI](#install-claude-cli)
 3. [Get TLS Certificates](#get-tls-certificates)
 4. [Configure Upstream Provider](#configure-upstream-provider)
-5. [Install Mail Stack](#install-mail-stack)
+5. [Install Postal Inspector](#install-postal-inspector)
 6. [Configure Mail Client](#configure-mail-client)
 7. [Testing](#testing)
 8. [Customization](#customization)
@@ -47,7 +47,7 @@ docker-compose --version
 
 ## Install Claude CLI
 
-Mail Stack uses Claude CLI for AI-powered email analysis. You need to install and authenticate it on the host machine.
+Postal Inspector uses Claude CLI for AI-powered email analysis. You need to install and authenticate it on the host machine.
 
 ### Install Claude CLI
 
@@ -150,10 +150,10 @@ If you already have certificates (from another service, or purchased):
 # - privkey.pem (private key)
 ```
 
-### Copy Certificates to Mail Stack
+### Copy Certificates to Postal Inspector
 
 ```bash
-cd /path/to/mail-stack
+cd /path/to/postal-inspector
 mkdir -p certs
 
 # Copy from Let's Encrypt
@@ -174,22 +174,22 @@ Set up automatic certificate renewal:
 # Test renewal
 sudo certbot renew --dry-run
 
-# Add post-renewal hook to copy certs and restart mail-stack
-sudo tee /etc/letsencrypt/renewal-hooks/deploy/mail-stack.sh << 'EOF'
+# Add post-renewal hook to copy certs and restart postal-inspector
+sudo tee /etc/letsencrypt/renewal-hooks/deploy/postal-inspector.sh << 'EOF'
 #!/bin/bash
-cp /etc/letsencrypt/live/mail.yourdomain.com/fullchain.pem /path/to/mail-stack/certs/
-cp /etc/letsencrypt/live/mail.yourdomain.com/privkey.pem /path/to/mail-stack/certs/
-cd /path/to/mail-stack && docker-compose restart imap
+cp /etc/letsencrypt/live/mail.yourdomain.com/fullchain.pem /path/to/postal-inspector/certs/
+cp /etc/letsencrypt/live/mail.yourdomain.com/privkey.pem /path/to/postal-inspector/certs/
+cd /path/to/postal-inspector && docker-compose restart imap
 EOF
 
-sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/mail-stack.sh
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/postal-inspector.sh
 ```
 
 ---
 
 ## Configure Upstream Provider
 
-Mail Stack fetches mail from any IMAP provider. You need these 4 pieces of information:
+Postal Inspector fetches mail from any IMAP provider. You need these 4 pieces of information:
 
 | Setting | Description | Example |
 |---------|-------------|---------|
@@ -256,13 +256,13 @@ UPSTREAM_PASS=your-password-or-app-password
 
 ---
 
-## Install Mail Stack
+## Install Postal Inspector
 
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/mail-stack.git
-cd mail-stack
+git clone https://github.com/yourusername/postal-inspector.git
+cd postal-inspector
 ```
 
 ### Configure Environment
@@ -358,7 +358,7 @@ Same settings as desktop. For sending, use your upstream provider's SMTP setting
 
 ### Why No SMTP?
 
-Mail Stack is designed for **receiving** mail. For **sending**, continue using your upstream provider (Gmail, O365, etc.). This avoids deliverability issues and keeps the setup simple.
+Postal Inspector is designed for **receiving** mail. For **sending**, continue using your upstream provider (Gmail, O365, etc.). This avoids deliverability issues and keeps the setup simple.
 
 ---
 
