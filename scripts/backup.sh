@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 #############################################
-# Mail Backup Script
+# Postal Inspector Backup Script
 # Creates compressed backup of maildir
 # Runs daily, keeps configurable retention
 #############################################

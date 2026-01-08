@@ -53,20 +53,35 @@ chown -R 5000:5000 "$INSTALL_DIR/data/maildir"
 chown -R 5000:5000 "$INSTALL_DIR/data/claude-state"
 chown -R 5000:5000 "$INSTALL_DIR/logs"
 
-# Copy files
+# Copy files (only if newer, preserving user modifications)
 echo "Copying files..."
-cp -r "$SCRIPT_DIR/services" "$INSTALL_DIR/"
-cp -r "$SCRIPT_DIR/scripts" "$INSTALL_DIR/"
-cp "$SCRIPT_DIR/docker-compose.yml" "$INSTALL_DIR/"
 
-# Copy config template if .env doesn't exist
+# Use cp -n (no-clobber) for first install, rsync -u (update) for upgrades
+if command -v rsync &> /dev/null; then
+    # rsync -u only copies if source is newer
+    rsync -a --update "$SCRIPT_DIR/services/" "$INSTALL_DIR/services/"
+    rsync -a --update "$SCRIPT_DIR/scripts/" "$INSTALL_DIR/scripts/"
+    rsync -a --update "$SCRIPT_DIR/docker-compose.yml" "$INSTALL_DIR/docker-compose.yml"
+    echo "  Files synced (preserved local modifications)"
+else
+    # Fallback: only copy if destination doesn't exist
+    if [ ! -d "$INSTALL_DIR/services" ]; then
+        cp -r "$SCRIPT_DIR/services" "$INSTALL_DIR/"
+    fi
+    if [ ! -d "$INSTALL_DIR/scripts" ]; then
+        cp -r "$SCRIPT_DIR/scripts" "$INSTALL_DIR/"
+    fi
+    if [ ! -f "$INSTALL_DIR/docker-compose.yml" ]; then
+        cp "$SCRIPT_DIR/docker-compose.yml" "$INSTALL_DIR/"
+    fi
+    echo "  Files copied (skipped existing)"
+fi
+
+# Copy .env.example as .env if .env doesn't exist
 if [ ! -f "$INSTALL_DIR/.env" ]; then
-    if [ -f "$SCRIPT_DIR/config/env.template" ]; then
-        cp "$SCRIPT_DIR/config/env.template" "$INSTALL_DIR/.env"
-        echo "  Created .env from template - EDIT THIS FILE!"
-    elif [ -f "$SCRIPT_DIR/.env" ]; then
-        cp "$SCRIPT_DIR/.env" "$INSTALL_DIR/.env"
-        echo "  Copied existing .env"
+    if [ -f "$SCRIPT_DIR/.env.example" ]; then
+        cp "$SCRIPT_DIR/.env.example" "$INSTALL_DIR/.env"
+        echo "  Created .env from .env.example - EDIT THIS FILE!"
     fi
 fi
 
