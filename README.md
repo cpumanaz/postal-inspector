@@ -160,8 +160,9 @@ This project implements defense-in-depth security:
 ### Container Security
 - `no-new-privileges` - Prevents privilege escalation
 - `cap_drop: ALL` - Drops all Linux capabilities
-- `read_only: true` - Read-only root filesystem for AI containers
-- Minimal capability additions (`CHOWN`, `DAC_OVERRIDE` only where needed)
+- Resource limits on all containers (memory, CPU, PIDs)
+- Non-root execution using supercronic for scheduled tasks
+- Docker's default seccomp profile blocks dangerous syscalls
 
 ### Input Validation
 - All environment variables validated with strict regex patterns
@@ -247,8 +248,20 @@ sudo chown -R 5000:5000 data/maildir/
 - Docker 20.10+
 - Docker Compose 2.0+
 - Claude CLI with valid authentication (`~/.claude` directory)
-- 512MB+ RAM (ClamAV requires significant memory)
+- 1GB+ RAM (ClamAV requires ~512MB for virus signatures)
 - TLS certificate for mail domain
+
+## Cost Estimate
+
+Mail Stack uses Claude API for AI analysis. Typical costs:
+
+| Usage | Estimated Cost |
+|-------|----------------|
+| Per email scan | ~$0.001-0.01 |
+| Daily briefing | ~$0.01-0.05 |
+| 100 emails/day | ~$1-3/month |
+
+Costs vary based on email length and Claude API pricing. The scanner uses efficient prompts to minimize token usage.
 
 ## License
 

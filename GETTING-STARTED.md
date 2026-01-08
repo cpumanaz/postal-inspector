@@ -189,9 +189,23 @@ sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/mail-stack.sh
 
 ## Configure Upstream Provider
 
-Mail Stack fetches mail from an existing IMAP provider. Here's how to configure common providers:
+Mail Stack fetches mail from any IMAP provider. You need these 4 pieces of information:
 
-### Gmail
+| Setting | Description | Example |
+|---------|-------------|---------|
+| `UPSTREAM_SERVER` | Your provider's IMAP server | `imap.gmail.com` |
+| `UPSTREAM_PORT` | IMAP port (usually 993 for TLS) | `993` |
+| `UPSTREAM_USER` | Your email address or username | `you@example.com` |
+| `UPSTREAM_PASS` | Your password or app password | `your-password` |
+
+**Where to find these:**
+- Check your provider's help docs for "IMAP settings" or "email client setup"
+- If you have 2FA enabled, you'll likely need an "app password" instead of your regular password
+- Port 993 is standard for secure IMAP (IMAPS)
+
+### Provider Examples
+
+#### Gmail
 
 1. Enable IMAP in Gmail settings
 2. Create an App Password (required with 2FA):
@@ -207,7 +221,7 @@ UPSTREAM_USER=you@gmail.com
 UPSTREAM_PASS=xxxx-xxxx-xxxx-xxxx  # App password, not your Google password
 ```
 
-### Microsoft 365 / Outlook.com
+#### Microsoft 365 / Outlook.com
 
 1. Enable IMAP in Outlook settings
 2. For personal accounts, use your regular password
@@ -220,7 +234,7 @@ UPSTREAM_USER=you@outlook.com
 UPSTREAM_PASS=your-password
 ```
 
-### Fastmail
+#### Fastmail
 
 ```env
 UPSTREAM_SERVER=imap.fastmail.com
@@ -229,13 +243,15 @@ UPSTREAM_USER=you@fastmail.com
 UPSTREAM_PASS=your-password  # Or app password
 ```
 
-### Generic IMAP Provider
+#### Other Providers
+
+Any IMAP provider works. Find "IMAP settings" in your provider's documentation:
 
 ```env
 UPSTREAM_SERVER=imap.yourprovider.com
 UPSTREAM_PORT=993
-UPSTREAM_USER=your-username
-UPSTREAM_PASS=your-password
+UPSTREAM_USER=your-email-or-username
+UPSTREAM_PASS=your-password-or-app-password
 ```
 
 ---
@@ -468,7 +484,7 @@ docker-compose up -d imap
 ### Daily briefing not generating
 
 1. Check briefing service logs: `make logs-briefing`
-2. Verify cron is running: `docker-compose exec daily-briefing pgrep cron`
+2. Verify supercronic is running: `docker-compose exec daily-briefing pgrep supercronic`
 3. Test manually: `make test-briefing`
 
 ### Permission errors
