@@ -83,12 +83,21 @@ echo "Hello, can you respond?" | claude --print
 
 ### Fix Credentials Permissions
 
-The containers run as the `vmail` user (UID 5000). The credentials file must be readable:
+The containers run as the `vmail` user (UID/GID 5000). The credentials file must be readable by this group:
 
 ```bash
-# Make credentials readable by container
-chmod 644 ~/.claude/.credentials.json
+# SECURITY: Set group to vmail (5000) and restrict permissions
+sudo chgrp 5000 ~/.claude/.credentials.json
+chmod 640 ~/.claude/.credentials.json
+
+# Verify: should show -rw-r----- with group 5000
+ls -la ~/.claude/.credentials.json
 ```
+
+This makes the file readable by:
+- Your user (owner)
+- The container's vmail user (via group 5000)
+- NOT readable by other users on the system
 
 The `~/.claude/.credentials.json` file will be mounted into the containers (read-only) to provide authentication.
 

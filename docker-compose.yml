@@ -5,6 +5,12 @@ networks:
 volumes:
   clamav-data:
 
+# SECURITY NOTES:
+# - Docker's default seccomp profile is applied to all containers (blocks ~44 dangerous syscalls)
+# - All containers drop ALL capabilities and use no-new-privileges
+# - Resource limits prevent DoS via memory/CPU exhaustion
+# - Passwords configured via .env file (standard Docker Compose pattern)
+
 services:
   # ===========================================
   # IMAP Server (Dovecot)
@@ -16,6 +22,13 @@ services:
     ports:
       # SECURITY: Only expose TLS port, not plaintext
       - "${IMAPS_PORT:-993}:993"
+    # SECURITY: Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+          pids: 100
     volumes:
       - ./data/maildir:/var/mail:delegated
       - ./services/imap/conf.d:/etc/dovecot/conf.d:ro
@@ -45,6 +58,13 @@ services:
         condition: service_healthy
     # Run as vmail user so files are created with correct ownership
     user: "5000:5000"
+    # SECURITY: Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+          pids: 50
     volumes:
       - ./data/maildir:/var/mail:delegated
     environment:
@@ -74,6 +94,13 @@ services:
   antivirus:
     image: clamav/clamav:1.4
     restart: unless-stopped
+    # SECURITY: Resource limits (ClamAV needs more RAM for virus signatures)
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+          pids: 100
     volumes:
       - clamav-data:/var/lib/clamav
     environment:
@@ -97,6 +124,13 @@ services:
     depends_on:
       imap:
         condition: service_healthy
+    # SECURITY: Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+          pids: 100
     volumes:
       - ./data/maildir:/var/mail:rw
       # SECURITY: Only mount credentials file read-only, isolate state
@@ -114,14 +148,12 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    cap_add:
-      - CHOWN           # For maildir operations
-      - DAC_OVERRIDE    # For reading mail files
+    # Note: No cap_add needed - runs as vmail with proper file ownership
     # Note: read_only disabled because Claude CLI needs to write state files
     tmpfs:
       - /tmp:size=64M,mode=1777
-    # SECURITY: No network access needed for file scanning
-    # (Claude CLI needs network, so we can't fully disable)
+    # SECURITY NOTE: Claude CLI needs network for API access
+    # For additional network egress control, configure host firewall
     healthcheck:
       test: ["CMD", "pgrep", "-f", "inotifywait"]
       interval: 60s
@@ -138,6 +170,13 @@ services:
     depends_on:
       imap:
         condition: service_healthy
+    # SECURITY: Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+          pids: 100
     volumes:
       - ./data/maildir:/var/mail:rw
       # SECURITY: Only mount credentials file read-only, isolate state
@@ -156,14 +195,12 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
+    # Note: No cap_add needed - runs as vmail with proper file ownership
     # Note: read_only disabled because Claude CLI needs to write state files
     tmpfs:
       - /tmp:size=64M,mode=1777
     healthcheck:
-      test: ["CMD", "pgrep", "cron"]
+      test: ["CMD", "pgrep", "-f", "supercronic"]
       interval: 60s
       timeout: 10s
       retries: 3

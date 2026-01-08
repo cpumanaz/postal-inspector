@@ -1,18 +1,27 @@
 # Daily Briefing Service
-# Generates AI-powered email summaries at 8am
+# Generates AI-powered email summaries at configured hour
+# SECURITY: Runs entirely as non-root using supercronic
 
 FROM node:20-slim AS base
 
 # Install Claude CLI
 RUN npm install -g @anthropic-ai/claude-code
 
-# Install required packages
+# Install required packages (no cron - using supercronic instead)
 RUN apt-get update && apt-get install -y \
     bash \
     coreutils \
-    cron \
     procps \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Install supercronic (cron replacement that runs as non-root)
+ARG SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.29/supercronic-linux-amd64
+ARG SUPERCRONIC_SHA1SUM=cd48d45c4b10f3f0bfdd3a57d054cd05ac96812b
+RUN curl -fsSLO "$SUPERCRONIC_URL" \
+    && echo "${SUPERCRONIC_SHA1SUM}  supercronic-linux-amd64" | sha1sum -c - \
+    && chmod +x supercronic-linux-amd64 \
+    && mv supercronic-linux-amd64 /usr/local/bin/supercronic
 
 #############################################
 # User Setup - Run as vmail for consistency
@@ -37,7 +46,10 @@ RUN chmod +x /app/daily-briefing.sh /entrypoint.sh
 # Environment
 ENV MAIL_USER=user \
     BRIEFING_HOUR=8 \
-    TZ=UTC
+    TZ=UTC \
+    HOME=/home/vmail
 
-# Note: Container runs as root for cron daemon, but scripts run as vmail
+# SECURITY: Run as non-root user
+USER vmail
+
 ENTRYPOINT ["/entrypoint.sh"]

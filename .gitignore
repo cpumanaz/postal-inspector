@@ -1,5 +1,6 @@
 # Environment and secrets
 .env
+secrets/
 
 # Mail data
 data/

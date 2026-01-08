@@ -18,12 +18,14 @@ if [ -z "$UPSTREAM_USER" ]; then
     echo "ERROR: UPSTREAM_USER environment variable is required"
     exit 1
 fi
-if [ -z "$UPSTREAM_PASS" ]; then
-    echo "ERROR: UPSTREAM_PASS environment variable is required"
-    exit 1
-fi
 if [ -z "$LOCAL_USER" ]; then
     echo "ERROR: LOCAL_USER environment variable is required"
+    exit 1
+fi
+
+# Validate UPSTREAM_PASS is set
+if [ -z "$UPSTREAM_PASS" ]; then
+    echo "ERROR: UPSTREAM_PASS not set. Configure UPSTREAM_PASS in .env file."
     exit 1
 fi
 

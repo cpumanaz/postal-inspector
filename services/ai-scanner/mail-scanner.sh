@@ -24,9 +24,7 @@ PROCESSED_FILE="/app/logs/.processed_emails"
 RATE_LIMIT_FILE="/tmp/.scan_rate_limit"
 MAX_SCANS_PER_MINUTE=30
 
-# Dovecot vmail user - all mail files must be owned by this user
-VMAIL_UID=5000
-VMAIL_GID=5000
+# Note: Running as vmail (5000:5000) - file ownership handled automatically
 
 # Ensure directories exist
 mkdir -p "$(dirname "$LOGFILE")"
@@ -229,12 +227,11 @@ analyze_email() {
 
     log "  -> $verdict | $(sanitize_for_log "$reason" 80)"
 
-    # Take action - move file and fix ownership for Dovecot
+    # Take action - move file (ownership preserved since we run as vmail)
     if [ "$verdict" = "QUARANTINE" ]; then
         log "  ACTION: Moving to Quarantine"
         local dest="$MAILDIR/.Quarantine/cur/$filename"
         if mv "$email_file" "$dest" 2>/dev/null; then
-            chown ${VMAIL_UID}:${VMAIL_GID} "$dest" 2>/dev/null || true
             chmod 660 "$dest" 2>/dev/null || true
         else
             log "  ERROR: Move failed"
@@ -244,7 +241,6 @@ analyze_email() {
         if [[ "$email_file" == */new/* ]]; then
             local dest="$MAILDIR/cur/$filename"
             if mv "$email_file" "$dest" 2>/dev/null; then
-                chown ${VMAIL_UID}:${VMAIL_GID} "$dest" 2>/dev/null || true
                 chmod 660 "$dest" 2>/dev/null || true
             fi
         fi
