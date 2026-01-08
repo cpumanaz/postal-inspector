@@ -14,9 +14,22 @@ echo "Source: $SCRIPT_DIR"
 echo "Target: $INSTALL_DIR"
 echo ""
 
-# Check for root
+# Check for required permissions
 if [ "$EUID" -ne 0 ]; then
-    echo "Please run as root (sudo $0)"
+    echo "ERROR: Insufficient permissions"
+    echo ""
+    echo "This installer requires elevated privileges for:"
+    echo "  - Creating system directories (/opt/postal-inspector)"
+    echo "  - Creating system user (vmail, uid 5000)"
+    echo "  - Installing systemd services"
+    echo "  - Setting file ownership for mail storage"
+    echo ""
+    echo "Run with: sudo $0"
+    echo ""
+    echo "Alternatively, manually ensure your user has:"
+    echo "  - Write access to $INSTALL_DIR"
+    echo "  - Membership in docker group"
+    echo "  - Ability to create users or existing vmail user (uid 5000)"
     exit 1
 fi
 
