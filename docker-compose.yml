@@ -1,0 +1,169 @@
+networks:
+  mail:
+    driver: bridge
+
+volumes:
+  clamav-data:
+
+services:
+  # ===========================================
+  # IMAP Server (Dovecot)
+  # ===========================================
+  imap:
+    build: ./services/imap
+    restart: unless-stopped
+    hostname: mail
+    ports:
+      # SECURITY: Only expose TLS port, not plaintext
+      - "${IMAPS_PORT:-993}:993"
+    volumes:
+      - ./data/maildir:/var/mail:delegated
+      - ./services/imap/conf.d:/etc/dovecot/conf.d:ro
+      - ./certs/fullchain.pem:/etc/ssl/certs/fullchain.pem:ro
+      - ./certs/privkey.pem:/etc/ssl/private/privkey.pem:ro
+    environment:
+      - MAIL_USER=${MAIL_USER}
+      - MAIL_PASS=${MAIL_PASS}
+      - MAIL_DOMAIN=${MAIL_DOMAIN}
+      - TZ=${TZ:-US/Central}
+    networks:
+      - mail
+    healthcheck:
+      test: ["CMD", "doveadm", "service", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
+  # Mail Fetcher (Fetchmail)
+  # ===========================================
+  mail-fetch:
+    build: ./services/mail-fetch
+    restart: unless-stopped
+    depends_on:
+      imap:
+        condition: service_healthy
+    # Run as vmail user so files are created with correct ownership
+    user: "5000:5000"
+    volumes:
+      - ./data/maildir:/var/mail:delegated
+    environment:
+      - UPSTREAM_USER=${UPSTREAM_USER}
+      - UPSTREAM_PASS=${UPSTREAM_PASS}
+      - UPSTREAM_SERVER=${UPSTREAM_SERVER}
+      - UPSTREAM_PORT=${UPSTREAM_PORT:-993}
+      - FETCH_INTERVAL=${FETCH_INTERVAL:-300}
+      - LOCAL_USER=${MAIL_USER}
+      - TZ=${TZ:-US/Central}
+    networks:
+      - mail
+    # SECURITY: Restrict capabilities
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "pgrep", "-x", "fetchmail"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
+  # Virus Scanner (ClamAV)
+  # ===========================================
+  antivirus:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    volumes:
+      - clamav-data:/var/lib/clamav
+    environment:
+      - TZ=${TZ:-US/Central}
+    networks:
+      - mail
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping", "3"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+
+  # ===========================================
+  # AI Scanner (Claude CLI)
+  # SECURITY HARDENED
+  # ===========================================
+  ai-scanner:
+    build: ./services/ai-scanner
+    restart: unless-stopped
+    depends_on:
+      imap:
+        condition: service_healthy
+    volumes:
+      - ./data/maildir:/var/mail:rw
+      # SECURITY: Only mount credentials file read-only, isolate state
+      # Note: Mounted to vmail user's home directory
+      - ${HOME}/.claude/.credentials.json:/home/vmail/.claude/.credentials.json:ro
+      - ./data/claude-state/ai-scanner:/home/vmail/.claude/state:rw
+      - ./logs/ai-scanner:/app/logs:rw
+    environment:
+      - MAIL_USER=${MAIL_USER}
+      - TZ=${TZ:-US/Central}
+    networks:
+      - mail
+    # SECURITY HARDENING - defense in depth
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN           # For maildir operations
+      - DAC_OVERRIDE    # For reading mail files
+    # Note: read_only disabled because Claude CLI needs to write state files
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+    # SECURITY: No network access needed for file scanning
+    # (Claude CLI needs network, so we can't fully disable)
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "inotifywait"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================
+  # Daily Briefing (Claude CLI)
+  # SECURITY HARDENED
+  # ===========================================
+  daily-briefing:
+    build: ./services/daily-briefing
+    restart: unless-stopped
+    depends_on:
+      imap:
+        condition: service_healthy
+    volumes:
+      - ./data/maildir:/var/mail:rw
+      # SECURITY: Only mount credentials file read-only, isolate state
+      # Note: Mounted to vmail user's home directory (cron runs scripts as vmail)
+      - ${HOME}/.claude/.credentials.json:/home/vmail/.claude/.credentials.json:ro
+      - ./data/claude-state/daily-briefing:/home/vmail/.claude/state:rw
+      - ./logs/daily-briefing:/app/logs:rw
+    environment:
+      - MAIL_USER=${MAIL_USER}
+      - BRIEFING_HOUR=${BRIEFING_HOUR:-8}
+      - TZ=${TZ:-US/Central}
+    networks:
+      - mail
+    # SECURITY HARDENING - defense in depth
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+    # Note: read_only disabled because Claude CLI needs to write state files
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+    healthcheck:
+      test: ["CMD", "pgrep", "cron"]
+      interval: 60s
+      timeout: 10s
+      retries: 3

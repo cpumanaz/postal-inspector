@@ -1,0 +1,13 @@
+[Unit]
+Description=Mail Stack Backup
+After=mail-stack.service
+Requires=mail-stack.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/mail-stack/scripts/backup.sh
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

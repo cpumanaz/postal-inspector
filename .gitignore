@@ -1,0 +1,25 @@
+# Environment and secrets
+.env
+
+# Mail data
+data/
+
+# Logs
+logs/
+
+# TLS certificates
+certs/
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
