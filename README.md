@@ -84,7 +84,7 @@ Mail is scanned *before* it reaches your inbox, not after. If the AI is uncertai
 - **Newsletters** - Grouped by source
 - **Quarantined** - Brief mention of blocked threats
 
-**[View Sample Briefing →](docs/sample-briefing.html)**
+**[View Sample Briefing →](https://cpumanaz.github.io/postal-inspector/docs/sample-briefing.html)**
 
 ## Requirements
 
