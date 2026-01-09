@@ -135,8 +135,8 @@ services:
           pids: 100
     volumes:
       - ./data/maildir:/var/mail:rw
-      # SECURITY: Credentials stored locally, mounted read-only
-      - ./secrets/claude-credentials.json:/home/vmail/.claude/.credentials.json:ro
+      # Claude CLI auto-refreshes tokens, needs write access
+      - ./secrets/claude-credentials.json:/home/vmail/.claude/.credentials.json:rw
       - ./data/claude-state/ai-scanner:/home/vmail/.claude/state:rw
       - ./logs/ai-scanner:/app/logs:rw
     environment:
@@ -180,8 +180,8 @@ services:
           pids: 100
     volumes:
       - ./data/maildir:/var/mail:rw
-      # SECURITY: Credentials stored locally, mounted read-only
-      - ./secrets/claude-credentials.json:/home/vmail/.claude/.credentials.json:ro
+      # Claude CLI auto-refreshes tokens, needs write access
+      - ./secrets/claude-credentials.json:/home/vmail/.claude/.credentials.json:rw
       - ./data/claude-state/daily-briefing:/home/vmail/.claude/state:rw
       - ./logs/daily-briefing:/app/logs:rw
     environment:
