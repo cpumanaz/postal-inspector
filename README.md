@@ -33,27 +33,27 @@ Your email stays on your infrastructure. No third-party cloud scanning your mess
 ## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         INBOUND FLOW                            │
-│                                                                 │
-│  Your Email ──────► Fetch ──────► Scan ──────► AI Scanner      │
-│  (Gmail, O365,                                    │             │
-│   Fastmail...)                          ┌────────┴────────┐    │
-│                                         │                 │    │
-│                                         ▼                 ▼    │
-│                                      [SAFE]        [QUARANTINE]│
-│                                         │                      │
-│                                         ▼                      │
-│                                   Your Mail Server             │
-│                                         │                      │
-│                                         ▼                      │
-│                                    Mail Client                 │
-│                                                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                       DAILY BRIEFING                            │
-│                                                                 │
-│  Every morning ──► Review inbox ──► AI summary ──► Email to you│
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         INBOUND FLOW                             │
+│                                                                  │
+│  Your Email ──────► Fetch ──────► Scan ──────► AI Scanner        │
+│  (Gmail, O365,                                    │              │
+│   Fastmail...)                          ┌────────┴────────┐      │
+│                                         │                 │      │
+│                                         ▼                 ▼      │
+│                                      [SAFE]        [QUARANTINE]  │
+│                                         │                        │
+│                                         ▼                        │
+│                                   Your Mail Server               │
+│                                         │                        │
+│                                         ▼                        │
+│                                    Mail Client                   │
+│                                                                  │
+├──────────────────────────────────────────────────────────────────┤
+│                       DAILY BRIEFING                             │
+│                                                                  │
+│  Every morning ──► Review inbox ──► AI summary ──► Email to you  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 Mail is scanned *before* it reaches your inbox, not after. If the AI is uncertain or something fails, the email goes to Quarantine - never delivered by default. Suspicious mail can't slip through due to errors.
@@ -112,3 +112,4 @@ MIT
 ---
 
 *Built with Claude AI for intelligent email management.*
+
