@@ -54,6 +54,7 @@ fi
 echo "Creating installation directory..."
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR/data/maildir"
+mkdir -p "$INSTALL_DIR/data/maildir/.staging"
 mkdir -p "$INSTALL_DIR/data/claude-state/ai-scanner"
 mkdir -p "$INSTALL_DIR/data/claude-state/daily-briefing"
 mkdir -p "$INSTALL_DIR/logs/ai-scanner"
@@ -106,16 +107,39 @@ systemctl daemon-reload
 
 # Enable services
 echo "Enabling services..."
-systemctl enable postal-inspector.service
-systemctl enable mail-backup.timer
+systemctl enable postal-inspector.service 2>/dev/null || true
+systemctl enable mail-backup.timer 2>/dev/null || true
+
+# Build containers
+echo "Building containers..."
+cd "$INSTALL_DIR"
+docker-compose build --quiet
+
+# Deploy containers (idempotent - recreates only if changed)
+echo "Deploying containers..."
+docker-compose up -d
+
+# Wait for health checks
+echo "Waiting for services to become healthy..."
+sleep 5
+
+# Show status
+echo ""
+echo "=== Container Status ==="
+docker-compose ps
 
 echo ""
 echo "=== Installation Complete ==="
 echo ""
-echo "Next steps:"
+echo "All services have been installed, built, and deployed."
+echo ""
+echo "If this is a first install, complete these steps:"
 echo "  1. Edit configuration: sudo nano $INSTALL_DIR/.env"
 echo "  2. Add SSL certs to: $INSTALL_DIR/certs/"
-echo "  3. Start the stack: sudo systemctl start postal-inspector"
-echo "  4. Check status: sudo systemctl status postal-inspector"
-echo "  5. View logs: docker-compose -f $INSTALL_DIR/docker-compose.yml logs -f"
+echo "  3. Restart after config changes: cd $INSTALL_DIR && docker-compose up -d"
+echo ""
+echo "Useful commands:"
+echo "  View logs: cd $INSTALL_DIR && docker-compose logs -f"
+echo "  Restart:   cd $INSTALL_DIR && docker-compose restart"
+echo "  Status:    cd $INSTALL_DIR && docker-compose ps"
 echo ""

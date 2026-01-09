@@ -8,6 +8,7 @@ set -euo pipefail
 
 # Configuration
 MAIL_USER="${MAIL_USER:-user}"
+MAIL_DOMAIN="${MAIL_DOMAIN:-localhost}"
 
 # SECURITY: Validate MAIL_USER - only allow safe characters
 if ! [[ "$MAIL_USER" =~ ^[a-zA-Z0-9_-]+$ ]]; then
@@ -15,9 +16,15 @@ if ! [[ "$MAIL_USER" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     exit 1
 fi
 
+# SECURITY: Validate MAIL_DOMAIN - only allow valid domain characters
+if ! [[ "$MAIL_DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+    echo "ERROR: MAIL_DOMAIN contains invalid characters. Only [a-zA-Z0-9.-] allowed."
+    exit 1
+fi
+
 MAILDIR="/var/mail/${MAIL_USER}"
 LOGFILE="/app/logs/daily-briefing.log"
-BRIEFING_FROM="Daily Briefing <briefing@localhost>"
+BRIEFING_FROM="Daily Briefing <briefing@${MAIL_DOMAIN}>"
 
 # Dovecot vmail user - all mail files must be owned by this user
 VMAIL_UID=5000
@@ -213,7 +220,7 @@ deliver_briefing() {
     local today
     today=$(date '+%A, %B %d')
     local message_id
-    message_id="briefing-$(date '+%Y%m%d%H%M%S')-$$@localhost"
+    message_id="briefing-$(date '+%Y%m%d%H%M%S')-$$@${MAIL_DOMAIN}"
     local timestamp
     timestamp=$(date -R)
 

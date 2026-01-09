@@ -16,11 +16,8 @@ RUN mkdir -p /etc/dovecot/sieve
 # Copy main config
 COPY dovecot.conf /etc/dovecot/dovecot.conf
 
-# Copy sieve filters
+# Copy sieve filter template (compiled at runtime from ALIAS_PREFIX)
 COPY sieve/ /etc/dovecot/sieve/
-
-# Compile sieve script
-RUN sievec /etc/dovecot/sieve/default.sieve || true
 
 # Create entrypoint script
 COPY entrypoint.sh /entrypoint.sh

@@ -93,7 +93,7 @@ poll ${UPSTREAM_SERVER}
     ssl
     sslcertck
     nokeep
-    mda "/usr/local/bin/deliver.sh /var/mail/${LOCAL_USER}"
+    mda "/usr/local/bin/lmtp-deliver.sh"
 EOF
 
 # SECURITY: Restrict fetchmailrc permissions (contains password)
@@ -101,6 +101,6 @@ chmod 600 "$FETCHMAILRC"
 
 echo "Starting fetchmail daemon (interval: ${FETCH_INTERVAL}s)..."
 echo "Fetching from: ${UPSTREAM_SERVER} as ${UPSTREAM_USER}"
-echo "Delivering to: /var/mail/${LOCAL_USER}/"
+echo "Delivering via: LMTP -> dovecot -> sieve"
 
 exec fetchmail -f "$FETCHMAILRC" -v --nodetach

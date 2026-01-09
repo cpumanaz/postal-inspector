@@ -36,42 +36,45 @@ Your email stays on your infrastructure. No third-party cloud scanning your mess
 ┌─────────────────────────────────────────────────────────────────┐
 │                         INBOUND FLOW                            │
 │                                                                 │
-│  Upstream IMAP ──► Fetchmail ──► AI Scanner                    │
-│  (Gmail, O365,              │           │                       │
-│   Fastmail...)              ▼           ▼                       │
-│                      [INBOX/new]  → [QUARANTINE] (threats)     │
-│                           │              │                      │
-│                           ▼              │                      │
-│                      [INBOX/cur] ◄───────┘ (safe mail)         │
-│                           │                                     │
-│                           ▼                                     │
-│                    Dovecot IMAP ──► Your Mail Client           │
+│  Your Email ──────► Fetch ──────► Scan ──────► AI Scanner      │
+│  (Gmail, O365,                                    │             │
+│   Fastmail...)                          ┌────────┴────────┐    │
+│                                         │                 │    │
+│                                         ▼                 ▼    │
+│                                      [SAFE]        [QUARANTINE]│
+│                                         │                      │
+│                                         ▼                      │
+│                                   Your Mail Server             │
+│                                         │                      │
+│                                         ▼                      │
+│                                    Mail Client                 │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
 │                       DAILY BRIEFING                            │
 │                                                                 │
-│  8:00 AM ──► Scan last 24h ──► Claude AI ──► HTML Email        │
+│  Every morning ──► Review inbox ──► AI summary ──► Email to you│
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+Mail is scanned *before* it reaches your inbox, not after. If the AI is uncertain or something fails, the email goes to Quarantine - never delivered by default. Suspicious mail can't slip through due to errors.
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| **AI Security Scanner** | Real-time phishing detection using Claude |
-| **Daily Briefings** | Personalized HTML summaries by priority |
-| **Virus Scanning** | ClamAV attachment scanning |
-| **Event-Driven** | Instant processing via inotify, no polling |
-| **Security Hardened** | Dropped capabilities, resource limits, fail-closed design |
+| **AI Security Scanner** | Every email analyzed for threats in real-time |
+| **Daily Briefings** | Morning summary of what needs your attention |
+| **Virus Scanning** | Attachments checked before delivery |
+| **Instant Processing** | New mail scanned immediately, not on a schedule |
+| **Secure by Default** | When in doubt, quarantine - nothing slips through |
 
 ### What the Scanner Catches
 
-- Typosquatting domains (`micros0ft.com`, `amaz0n.com`)
-- Header mismatches (From ≠ Reply-To domain)
+- Fake domains (`micros0ft.com`, `amaz0n.com`)
+- Sender address tricks (reply goes somewhere different than it appears)
 - Urgency tactics ("Act now!", "Account suspended")
-- Credential harvesting attempts
+- Credential harvesting ("Verify your password")
 - Suspicious attachments
-- Prompt injection attacks
 
 ### Daily Briefing Categories
 
@@ -83,65 +86,24 @@ Your email stays on your infrastructure. No third-party cloud scanning your mess
 
 **[View Sample Briefing →](docs/sample-briefing.html)**
 
-## Quick Start
-
-```bash
-# Clone and configure
-git clone https://github.com/yourusername/postal-inspector.git
-cd postal-inspector
-cp .env.example .env
-nano .env  # Add your upstream IMAP credentials
-
-# Add TLS certs (see GETTING-STARTED.md for details)
-mkdir -p certs
-cp /path/to/fullchain.pem certs/
-cp /path/to/privkey.pem certs/
-
-# Launch
-make build && make up
-make status  # Verify all services are healthy
-```
-
-**[Full Setup Guide →](GETTING-STARTED.md)**
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| IMAP Server | Dovecot |
-| Mail Fetcher | Fetchmail |
-| AI Engine | Claude CLI |
-| Virus Scanner | ClamAV |
-| Scheduler | Supercronic |
-| Container | Docker Compose |
-
-## Commands
-
-```bash
-make up            # Start all services
-make down          # Stop all services
-make logs          # Follow all logs
-make logs-scanner  # Watch AI scanner in action
-make test-briefing # Generate a briefing now
-make status        # Check service health
-```
-
 ## Requirements
 
-- Docker 20.10+ and Docker Compose 2.0+
-- [Claude CLI](https://github.com/anthropics/claude-code) authenticated
+- Linux server with Docker 20.10+ and Docker Compose 2.0+
+- [Claude subscription](https://claude.ai) (Pro, Max, or Max 200)
+- Domain name with DNS control
 - TLS certificate for your mail domain
 - 1GB+ RAM (ClamAV needs ~512MB)
 - Upstream IMAP provider (Gmail, O365, Fastmail, etc.)
 
-## Cost
+Your Claude subscription covers all AI scanning and briefings - no additional API costs.
 
-Postal Inspector uses [Claude Code](https://github.com/anthropics/claude-code), which requires a Claude subscription (Pro, Max, or Max 200). Your existing subscription covers the AI scanning and briefings - no additional API costs.
+## Get Started
 
-## Documentation
+**[Installation Guide →](docs/GETTING-STARTED.md)**
 
-- **[Getting Started](GETTING-STARTED.md)** - Full setup walkthrough
-- **[Security Model](GETTING-STARTED.md#security-checklist)** - Defense-in-depth details
+## Under the Hood
+
+Built on proven open-source components: Dovecot (IMAP), Fetchmail, ClamAV, and Claude CLI - all orchestrated with Docker Compose.
 
 ## License
 

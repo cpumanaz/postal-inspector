@@ -13,6 +13,9 @@ This guide walks you through setting up Postal Inspector from scratch. By the en
 7. [Testing](#testing)
 8. [Customization](#customization)
 9. [Troubleshooting](#troubleshooting)
+10. [DNS Setup](#dns-setup)
+11. [Security Checklist](#security-checklist)
+12. [Next Steps](#next-steps)
 
 ---
 
@@ -29,7 +32,9 @@ This guide walks you through setting up Postal Inspector from scratch. By the en
 
 - Linux server (Ubuntu 22.04+, Debian 12+, or similar)
 - Docker 20.10+ and Docker Compose 2.0+
-- Domain name with DNS control
+- Domain name with DNS control (e.g., `mail.yourdomain.com`)
+  - Required for TLS certificate verification
+  - Create an A record pointing to your server's IP address
 
 ### Install Docker
 
@@ -47,16 +52,28 @@ docker-compose --version
 
 ## Install Claude CLI
 
-Postal Inspector uses Claude CLI for AI-powered email analysis. You need to install and authenticate it on the host machine.
+Postal Inspector uses Claude CLI for AI-powered email analysis. Install and authenticate it on the host machine before setting up the project.
+
+**Requires a Claude subscription** (Pro, Max, or Max 200) from [claude.ai](https://claude.ai). Your subscription covers all AI usage - no additional API costs.
+
+For full details, see the official docs at [github.com/anthropics/claude-code](https://github.com/anthropics/claude-code).
 
 ### Install Claude CLI
 
 ```bash
 # Install globally via npm
 npm install -g @anthropic-ai/claude-code
+```
 
-# Or if you don't have npm
-curl -fsSL https://claude.ai/install.sh | sh
+If you don't have npm installed:
+
+```bash
+# Install Node.js and npm first (Ubuntu/Debian)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Then install Claude CLI
+npm install -g @anthropic-ai/claude-code
 ```
 
 ### Authenticate Claude CLI
@@ -81,24 +98,9 @@ ls -la ~/.claude/
 echo "Hello, can you respond?" | claude --print
 ```
 
-### Copy Credentials to Project
+Your credentials are stored at `~/.claude/.credentials.json`. You'll copy this file into the project during installation.
 
-After authenticating, Claude stores your credentials at `~/.claude/.credentials.json`. Copy this file to the project's secrets folder:
-
-```bash
-# Create secrets directory if needed
-mkdir -p /path/to/postal-inspector/secrets
-
-# Copy credentials file
-cp ~/.claude/.credentials.json /path/to/postal-inspector/secrets/claude-credentials.json
-
-# Set secure permissions (readable by owner and vmail group)
-chmod 640 /path/to/postal-inspector/secrets/claude-credentials.json
-```
-
-**Important**: The docker-compose mounts `./secrets/claude-credentials.json` into the AI scanner and daily briefing containers. This file must exist before starting the stack. The install script will sync this to `/opt/postal-inspector/secrets/` during installation.
-
-**What's in the credentials file**: This JSON file contains your OAuth tokens from the Claude authentication. It looks like:
+**What's in the credentials file**: This JSON file contains your OAuth tokens from the Claude authentication:
 
 ```json
 {
@@ -114,7 +116,11 @@ chmod 640 /path/to/postal-inspector/secrets/claude-credentials.json
 
 ## Get TLS Certificates
 
-Your IMAP server needs TLS certificates. The easiest way is using Let's Encrypt with certbot.
+Your IMAP server needs TLS certificates. You'll need two files:
+- `fullchain.pem` - your certificate and issuer chain
+- `privkey.pem` - your private key
+
+For full details on certbot, see [certbot.eff.org](https://certbot.eff.org/).
 
 ### Option A: Certbot with DNS Challenge (Recommended)
 
@@ -151,48 +157,11 @@ sudo certbot certonly --standalone -d mail.yourdomain.com
 
 ### Option C: Existing Certificates
 
-If you already have certificates (from another service, or purchased):
+If you already have certificates from another service or purchased, just note their location. You need:
+- `fullchain.pem` (certificate + intermediate chain)
+- `privkey.pem` (private key)
 
-```bash
-# Just ensure you have:
-# - fullchain.pem (certificate + intermediate chain)
-# - privkey.pem (private key)
-```
-
-### Copy Certificates to Postal Inspector
-
-```bash
-cd /path/to/postal-inspector
-mkdir -p certs
-
-# Copy from Let's Encrypt
-sudo cp /etc/letsencrypt/live/mail.yourdomain.com/fullchain.pem certs/
-sudo cp /etc/letsencrypt/live/mail.yourdomain.com/privkey.pem certs/
-
-# Fix permissions
-sudo chown $USER:$USER certs/*.pem
-chmod 600 certs/privkey.pem
-chmod 644 certs/fullchain.pem
-```
-
-### Auto-Renewal
-
-Set up automatic certificate renewal:
-
-```bash
-# Test renewal
-sudo certbot renew --dry-run
-
-# Add post-renewal hook to copy certs and restart postal-inspector
-sudo tee /etc/letsencrypt/renewal-hooks/deploy/postal-inspector.sh << 'EOF'
-#!/bin/bash
-cp /etc/letsencrypt/live/mail.yourdomain.com/fullchain.pem /path/to/postal-inspector/certs/
-cp /etc/letsencrypt/live/mail.yourdomain.com/privkey.pem /path/to/postal-inspector/certs/
-cd /path/to/postal-inspector && docker-compose restart imap
-EOF
-
-sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/postal-inspector.sh
-```
+You'll copy these into the project during installation.
 
 ---
 
@@ -270,9 +239,36 @@ UPSTREAM_PASS=your-password-or-app-password
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/postal-inspector.git
+git clone https://github.com/cpumanaz/postal-inspector.git
 cd postal-inspector
 ```
+
+### Copy Certificates
+
+```bash
+mkdir -p certs
+
+# Copy from Let's Encrypt (adjust path if using existing certs)
+sudo cp /etc/letsencrypt/live/mail.yourdomain.com/fullchain.pem certs/
+sudo cp /etc/letsencrypt/live/mail.yourdomain.com/privkey.pem certs/
+
+# Fix permissions
+sudo chown $USER:$USER certs/*.pem
+chmod 600 certs/privkey.pem
+chmod 644 certs/fullchain.pem
+```
+
+### Copy Claude Credentials
+
+```bash
+mkdir -p secrets
+
+# Copy from your home directory
+cp ~/.claude/.credentials.json secrets/claude-credentials.json
+chmod 640 secrets/claude-credentials.json
+```
+
+The docker-compose mounts this file into the AI scanner and daily briefing containers. It must exist before starting the stack.
 
 ### Configure Environment
 
@@ -311,16 +307,22 @@ FETCH_INTERVAL=300
 BRIEFING_HOUR=8
 
 # Backup settings
-BACKUP_DIR=/backups
+BACKUP_DIR=/path/to/backups
 BACKUP_RETENTION_DAYS=7
 ```
 
-### Verify Certificates
+### Verify Prerequisites
+
+Before starting, ensure you have:
 
 ```bash
-# Ensure certs exist
+# 1. Certificates in place
 ls -la certs/
 # Should show fullchain.pem and privkey.pem
+
+# 2. Claude credentials copied
+ls -la secrets/
+# Should show claude-credentials.json
 ```
 
 ### Start the Stack
@@ -342,6 +344,45 @@ make status
 
 # Expected output - all services should be "Up" or "healthy"
 ```
+
+### Commands Reference
+
+```bash
+make up            # Start all services
+make down          # Stop all services
+make logs          # Follow all logs
+make logs-scanner  # Watch AI scanner in action
+make logs-fetch    # Watch mail fetcher
+make logs-briefing # Watch daily briefing service
+make test-briefing # Generate a briefing now
+make status        # Check service health
+make restart       # Restart all services
+```
+
+### Set Up Certificate Auto-Renewal (Let's Encrypt)
+
+If you used Let's Encrypt, set up automatic renewal now. Certificates expire every 90 days.
+
+```bash
+# Test renewal works
+sudo certbot renew --dry-run
+```
+
+Create the renewal hook (replace the path with your actual install location):
+
+```bash
+sudo tee /etc/letsencrypt/renewal-hooks/deploy/postal-inspector.sh << 'EOF'
+#!/bin/bash
+POSTAL_DIR="/home/youruser/postal-inspector"  # <- Change this to your install path
+cp /etc/letsencrypt/live/mail.yourdomain.com/fullchain.pem "$POSTAL_DIR/certs/"
+cp /etc/letsencrypt/live/mail.yourdomain.com/privkey.pem "$POSTAL_DIR/certs/"
+cd "$POSTAL_DIR" && docker-compose restart imap
+EOF
+
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/postal-inspector.sh
+```
+
+Certbot runs automatically via systemd timer. The hook copies renewed certs and restarts the IMAP service.
 
 ---
 
@@ -385,11 +426,10 @@ openssl s_client -connect mail.yourdomain.com:993
 ### Test Mail Fetch
 
 ```bash
-# Trigger immediate fetch
-make fetch-now
-
 # Check fetch logs
 make logs-fetch
+
+# You should see fetchmail connecting and retrieving messages
 ```
 
 ### Test AI Scanner
@@ -400,7 +440,7 @@ make logs-fetch
 make logs-scanner
 
 # You should see:
-# [timestamp] NEW: Subject: Your test subject
+# [timestamp] SCAN: Subject: Your test subject
 # [timestamp]   -> SAFE | Normal correspondence
 ```
 
@@ -476,19 +516,13 @@ docker-compose up -d imap
 
 1. Check fetchmail logs: `make logs-fetch`
 2. Verify upstream credentials in `.env`
-3. Test upstream connection manually:
-   ```bash
-   docker-compose exec mail-fetch fetchmail -v
-   ```
+3. Look for authentication errors in the logs
 
 ### AI Scanner not classifying emails
 
-1. Check Claude CLI authentication:
-   ```bash
-   docker-compose exec ai-scanner claude --version
-   ```
-2. Check scanner logs: `make logs-scanner`
-3. Verify `~/.claude` directory exists on host
+1. Check scanner logs: `make logs-scanner`
+2. Verify credentials file exists: `ls -la secrets/claude-credentials.json`
+3. Check for API errors in the logs
 
 ### Daily briefing not generating
 
@@ -511,17 +545,21 @@ ClamAV uses significant RAM. If you're memory-constrained:
 
 ---
 
-## DNS Setup (Optional but Recommended)
+## DNS Setup
 
-If you want to access your mail server by hostname:
+Your domain's A record should already be configured (see [Prerequisites](#software-requirements)).
 
-### A Record
+### Verify A Record
+
+```bash
+# Check that your domain resolves to your server
+nslookup mail.yourdomain.com
+# Should return your server's IP address
 ```
-mail.yourdomain.com -> your-server-ip
-```
 
-### Reverse DNS (PTR)
-Contact your hosting provider to set up reverse DNS for better deliverability if you plan to send mail through this server in the future.
+### Reverse DNS (PTR) - Optional
+
+If you plan to send mail through this server in the future, contact your hosting provider to set up reverse DNS for better deliverability.
 
 ---
 
@@ -532,7 +570,7 @@ Before going live:
 - [ ] Strong password for `MAIL_PASS` (16+ characters)
 - [ ] TLS certificates installed and valid
 - [ ] Firewall allows only port 993 for IMAP
-- [ ] Claude CLI authenticated on host
+- [ ] Claude credentials copied to `secrets/claude-credentials.json`
 - [ ] Upstream provider using app password (not main password)
 - [ ] Regular backups configured
 
@@ -549,8 +587,8 @@ Before going live:
 
 ## Getting Help
 
-- Check [README.md](README.md) for command reference
-- Open an issue on GitHub for bugs
+- Review [Commands Reference](#commands-reference) above
+- Open an issue on [GitHub](https://github.com/cpumanaz/postal-inspector/issues) for bugs
 - Review logs with `make logs` for troubleshooting
 
 ---

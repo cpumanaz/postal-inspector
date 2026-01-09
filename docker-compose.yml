@@ -38,6 +38,7 @@ services:
       - MAIL_USER=${MAIL_USER}
       - MAIL_PASS=${MAIL_PASS}
       - MAIL_DOMAIN=${MAIL_DOMAIN}
+      - ALIAS_PREFIX=${ALIAS_PREFIX:-}
       - TZ=${TZ:-US/Central}
     networks:
       - mail
@@ -74,6 +75,7 @@ services:
       - UPSTREAM_PORT=${UPSTREAM_PORT:-993}
       - FETCH_INTERVAL=${FETCH_INTERVAL:-300}
       - LOCAL_USER=${MAIL_USER}
+      - MAIL_DOMAIN=${MAIL_DOMAIN}
       - TZ=${TZ:-US/Central}
     networks:
       - mail
@@ -184,6 +186,7 @@ services:
       - ./logs/daily-briefing:/app/logs:rw
     environment:
       - MAIL_USER=${MAIL_USER}
+      - MAIL_DOMAIN=${MAIL_DOMAIN}
       - BRIEFING_HOUR=${BRIEFING_HOUR:-8}
       - TZ=${TZ:-US/Central}
     networks:

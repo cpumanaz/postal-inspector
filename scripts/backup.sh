@@ -24,15 +24,38 @@ log "Starting mail backup..."
 
 # Use docker-compose to get container name dynamically
 cd "$PROJECT_DIR"
-docker-compose exec -T imap tar -czf - -C /var mail > "${BACKUP_DIR}/mail-backup-${DATE}.tar.gz"
+BACKUP_FILE="${BACKUP_DIR}/mail-backup-${DATE}.tar.gz"
+docker-compose exec -T imap tar -czf - -C /var mail > "$BACKUP_FILE"
 
-if [ $? -eq 0 ]; then
-    SIZE=$(du -h "${BACKUP_DIR}/mail-backup-${DATE}.tar.gz" | cut -f1)
-    log "Backup created: mail-backup-${DATE}.tar.gz (${SIZE})"
-else
-    log "ERROR: Backup failed!"
+if [ $? -ne 0 ]; then
+    log "ERROR: Backup command failed!"
+    rm -f "$BACKUP_FILE"
     exit 1
 fi
+
+# Verify backup file exists and is not empty
+if [ ! -f "$BACKUP_FILE" ]; then
+    log "ERROR: Backup file was not created!"
+    exit 1
+fi
+
+# Check minimum size (empty tar.gz is ~20 bytes, require at least 100 bytes)
+BACKUP_SIZE=$(stat -c%s "$BACKUP_FILE" 2>/dev/null || stat -f%z "$BACKUP_FILE" 2>/dev/null)
+if [ "$BACKUP_SIZE" -lt 100 ]; then
+    log "ERROR: Backup file too small (${BACKUP_SIZE} bytes) - likely empty or corrupted"
+    rm -f "$BACKUP_FILE"
+    exit 1
+fi
+
+# Verify backup integrity - test that tar can read the archive
+if ! tar -tzf "$BACKUP_FILE" > /dev/null 2>&1; then
+    log "ERROR: Backup file is corrupted - tar integrity check failed"
+    rm -f "$BACKUP_FILE"
+    exit 1
+fi
+
+SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+log "Backup created and verified: mail-backup-${DATE}.tar.gz (${SIZE})"
 
 # Remove backups older than retention period
 log "Cleaning backups older than ${RETENTION_DAYS} days..."

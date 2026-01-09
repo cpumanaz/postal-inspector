@@ -4,6 +4,7 @@ RUN apk add --no-cache \
     fetchmail \
     ca-certificates \
     coreutils \
+    netcat-openbsd \
     && rm -rf /var/cache/apk/*
 
 # Create vmail user/group matching Dovecot's vmail
@@ -12,7 +13,7 @@ RUN addgroup -g 5000 vmail && \
 
 # Copy scripts
 COPY entrypoint.sh /entrypoint.sh
-COPY deliver.sh /usr/local/bin/deliver.sh
-RUN chmod 755 /entrypoint.sh /usr/local/bin/deliver.sh
+COPY lmtp-deliver.sh /usr/local/bin/lmtp-deliver.sh
+RUN chmod 755 /entrypoint.sh /usr/local/bin/lmtp-deliver.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
