@@ -47,11 +47,18 @@ PROCESSED_FILE="/app/logs/.processed_emails"
 RATE_LIMIT_FILE="/tmp/.scan_rate_limit"
 MAX_SCANS_PER_MINUTE=30
 
+# Retry tracking - move to .failed after this many attempts
+RETRY_FILE="/app/logs/.retry_counts"
+MAX_RETRIES=5
+
 # Ensure directories exist
 mkdir -p "$(dirname "$LOGFILE")"
 mkdir -p "$MAILDIR/.Quarantine/"{cur,new,tmp}
 mkdir -p "$STAGING_DIR"
+mkdir -p "$STAGING_DIR/.delivered"  # Archive of successfully delivered emails
+mkdir -p "$STAGING_DIR/.failed"     # Permanently failed emails for manual review
 touch "$PROCESSED_FILE"
+touch "$RETRY_FILE"
 
 #############################################
 # Security Functions
@@ -89,6 +96,34 @@ check_rate_limit() {
 
     echo "$now" >> "$RATE_LIMIT_FILE"
     return 0
+}
+
+# Get retry count for a file
+get_retry_count() {
+    local filename="$1"
+    grep -F "$filename" "$RETRY_FILE" 2>/dev/null | cut -d'|' -f2 || echo "0"
+}
+
+# Increment retry count, returns new count
+increment_retry() {
+    local filename="$1"
+    local current
+    current=$(get_retry_count "$filename")
+    local new_count=$((current + 1))
+
+    # Remove old entry and add new one
+    grep -vF "$filename" "$RETRY_FILE" > "${RETRY_FILE}.tmp" 2>/dev/null || true
+    echo "$filename|$new_count" >> "${RETRY_FILE}.tmp"
+    mv "${RETRY_FILE}.tmp" "$RETRY_FILE" 2>/dev/null || true
+
+    echo "$new_count"
+}
+
+# Clear retry count for a file (on success)
+clear_retry() {
+    local filename="$1"
+    grep -vF "$filename" "$RETRY_FILE" > "${RETRY_FILE}.tmp" 2>/dev/null || true
+    mv "${RETRY_FILE}.tmp" "$RETRY_FILE" 2>/dev/null || true
 }
 
 #############################################
@@ -214,9 +249,12 @@ analyze_staged_email() {
     local filename
     filename=$(basename "$email_file")
 
-    # Skip if already processed
+    # Skip if already processed - but DON'T delete (retain by default)
+    # If the file is still in staging but marked processed, something went wrong
+    # Move to delivered archive for safety rather than deleting
     if grep -qF "$filename" "$PROCESSED_FILE" 2>/dev/null; then
-        rm -f "$email_file"
+        log "SKIP: $filename already processed - archiving to .delivered"
+        mv "$email_file" "$STAGING_DIR/.delivered/" 2>/dev/null || true
         return 0
     fi
 
@@ -291,17 +329,39 @@ analyze_staged_email() {
             chmod 660 "$dest" 2>/dev/null || true
             # Mark as processed only after successful quarantine
             echo "$filename|$verdict|$(sanitize_for_log "$reason" 50)" >> "$PROCESSED_FILE"
+            clear_retry "$filename"
         else
-            log "  ERROR: Quarantine move failed, keeping in staging for retry"
+            # Track retry attempts for quarantine failures too
+            local retry_count
+            retry_count=$(increment_retry "$filename")
+            if [ "$retry_count" -ge "$MAX_RETRIES" ]; then
+                log "  FAILED: Max retries ($MAX_RETRIES) exceeded - moving to .failed for manual review"
+                mv "$email_file" "$STAGING_DIR/.failed/" 2>/dev/null || true
+                clear_retry "$filename"
+            else
+                log "  ERROR: Quarantine move failed (attempt $retry_count/$MAX_RETRIES), keeping in staging for retry"
+            fi
         fi
     else
         log "  ACTION: Delivering via LMTP (sieve will route)"
         if deliver_via_lmtp "$email_file"; then
-            rm -f "$email_file"
+            # Archive to .delivered instead of deleting (retain by default)
+            mv "$email_file" "$STAGING_DIR/.delivered/" 2>/dev/null || rm -f "$email_file"
             # Mark as processed only after successful delivery
             echo "$filename|$verdict|$(sanitize_for_log "$reason" 50)" >> "$PROCESSED_FILE"
+            # Clear any retry count
+            clear_retry "$filename"
         else
-            log "  ERROR: LMTP delivery failed, keeping in staging for retry"
+            # Track retry attempts
+            local retry_count
+            retry_count=$(increment_retry "$filename")
+            if [ "$retry_count" -ge "$MAX_RETRIES" ]; then
+                log "  FAILED: Max retries ($MAX_RETRIES) exceeded - moving to .failed for manual review"
+                mv "$email_file" "$STAGING_DIR/.failed/" 2>/dev/null || true
+                clear_retry "$filename"
+            else
+                log "  ERROR: LMTP delivery failed (attempt $retry_count/$MAX_RETRIES), keeping in staging for retry"
+            fi
         fi
     fi
 }

@@ -95,13 +95,23 @@ check_system_health() {
     # Check 1: Stuck emails in staging
     local staging_count=0
     if [ -d "/var/mail/.staging" ]; then
-        staging_count=$(find /var/mail/.staging -name "*.mail" -type f 2>/dev/null | wc -l)
-        if [ "$staging_count" -gt 10 ]; then
-            status="warning"
-            warnings+="<li>$staging_count emails stuck in staging queue</li>"
-        elif [ "$staging_count" -gt 50 ]; then
+        staging_count=$(find /var/mail/.staging -maxdepth 1 -name "*.mail" -type f 2>/dev/null | wc -l)
+        if [ "$staging_count" -gt 50 ]; then
             status="critical"
             issues+="<li><strong>$staging_count emails stuck in staging!</strong> Mail delivery may be failing.</li>"
+        elif [ "$staging_count" -gt 10 ]; then
+            status="warning"
+            warnings+="<li>$staging_count emails stuck in staging queue</li>"
+        fi
+    fi
+
+    # Check 1b: Failed emails requiring manual review
+    local failed_count=0
+    if [ -d "/var/mail/.staging/.failed" ]; then
+        failed_count=$(find /var/mail/.staging/.failed -name "*.mail" -type f 2>/dev/null | wc -l)
+        if [ "$failed_count" -gt 0 ]; then
+            status="critical"
+            issues+="<li><strong>$failed_count emails failed delivery!</strong> Manual review required in .failed folder.</li>"
         fi
     fi
 

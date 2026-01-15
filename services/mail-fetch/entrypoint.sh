@@ -92,7 +92,7 @@ poll ${UPSTREAM_SERVER}
     password "${UPSTREAM_PASS}"
     ssl
     sslcertck
-    nokeep
+    keep
     mda "/usr/local/bin/lmtp-deliver.sh"
 EOF
 
