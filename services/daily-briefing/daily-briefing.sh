@@ -85,6 +85,88 @@ log() {
 }
 
 #############################################
+# System Health Check
+#############################################
+check_system_health() {
+    local issues=""
+    local warnings=""
+    local status="healthy"
+
+    # Check 1: Stuck emails in staging
+    local staging_count=0
+    if [ -d "/var/mail/.staging" ]; then
+        staging_count=$(find /var/mail/.staging -name "*.mail" -type f 2>/dev/null | wc -l)
+        if [ "$staging_count" -gt 10 ]; then
+            status="warning"
+            warnings+="<li>$staging_count emails stuck in staging queue</li>"
+        elif [ "$staging_count" -gt 50 ]; then
+            status="critical"
+            issues+="<li><strong>$staging_count emails stuck in staging!</strong> Mail delivery may be failing.</li>"
+        fi
+    fi
+
+    # Check 2: LMTP connectivity test
+    if command -v nc &>/dev/null; then
+        if ! echo "QUIT" | nc -w 2 imap 24 &>/dev/null; then
+            status="critical"
+            issues+="<li><strong>LMTP service unreachable!</strong> Email delivery is broken.</li>"
+        fi
+    else
+        status="critical"
+        issues+="<li><strong>netcat not installed!</strong> LMTP delivery will fail.</li>"
+    fi
+
+    # Check 3: Credentials file
+    local creds_file="/home/vmail/.claude/.credentials.json"
+    if [ ! -f "$creds_file" ]; then
+        status="critical"
+        issues+="<li><strong>Claude credentials missing!</strong> AI scanning disabled.</li>"
+    else
+        # Check if credentials are expiring soon (within 2 hours)
+        local expires_at
+        expires_at=$(grep -o '"expiresAt":[0-9]*' "$creds_file" 2>/dev/null | grep -o '[0-9]*' || echo "0")
+        local now_ms=$(($(date +%s) * 1000))
+        local two_hours_ms=$((2 * 60 * 60 * 1000))
+        if [ "$expires_at" -lt "$((now_ms + two_hours_ms))" ] && [ "$expires_at" -gt 0 ]; then
+            warnings+="<li>Claude credentials expiring soon - may need refresh</li>"
+            [ "$status" = "healthy" ] && status="warning"
+        fi
+    fi
+
+    # Check 4: Recent scanner errors
+    local scanner_log="/app/logs/../ai-scanner/mail-scanner.log"
+    if [ -f "$scanner_log" ]; then
+        local recent_errors
+        recent_errors=$(grep -c "ERROR" "$scanner_log" 2>/dev/null | tail -1 || echo "0")
+        if [ "$recent_errors" -gt 20 ]; then
+            warnings+="<li>$recent_errors errors in scanner log - review recommended</li>"
+            [ "$status" = "healthy" ] && status="warning"
+        fi
+    fi
+
+    # Build health report HTML
+    local health_html=""
+
+    if [ "$status" = "critical" ]; then
+        health_html="<div style=\"background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 8px; padding: 16px; margin-bottom: 20px;\">
+            <h3 style=\"margin: 0 0 12px 0; color: #721c24;\">⚠️ System Alert</h3>
+            <ul style=\"margin: 0; padding-left: 20px; color: #721c24;\">$issues$warnings</ul>
+        </div>"
+    elif [ "$status" = "warning" ]; then
+        health_html="<div style=\"background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 20px;\">
+            <h3 style=\"margin: 0 0 12px 0; color: #856404;\">⚡ System Notice</h3>
+            <ul style=\"margin: 0; padding-left: 20px; color: #856404;\">$warnings</ul>
+        </div>"
+    else
+        health_html="<div style=\"background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 12px; margin-bottom: 20px; text-align: center;\">
+            <span style=\"color: #155724;\">✅ All systems operational</span>
+        </div>"
+    fi
+
+    echo "$health_html"
+}
+
+#############################################
 # Find emails from last 24 hours
 #############################################
 get_recent_emails() {
@@ -217,6 +299,7 @@ Generate the HTML briefing now:"
 #############################################
 deliver_briefing() {
     local briefing="$1"
+    local health_html="$2"
     local today
     today=$(date '+%A, %B %d')
     local message_id
@@ -253,8 +336,13 @@ Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'
             <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">$today</p>
         </div>
 
+        <!-- System Health -->
+        <div style="padding: 24px 24px 0 24px;">
+            $health_html
+        </div>
+
         <!-- Content -->
-        <div style="padding: 24px;">
+        <div style="padding: 0 24px 24px 24px;">
             $briefing
         </div>
 
@@ -298,9 +386,14 @@ main() {
     local briefing
     briefing=$(generate_briefing "$email_count" "$email_data")
 
+    # Check system health
+    log "Running system health check..."
+    local health_html
+    health_html=$(check_system_health)
+
     # Deliver
     log "Delivering briefing..."
-    deliver_briefing "$briefing"
+    deliver_briefing "$briefing" "$health_html"
 
     log "Done!"
 }

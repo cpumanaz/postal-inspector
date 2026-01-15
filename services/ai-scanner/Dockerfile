@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     coreutils \
     procps \
     inotify-tools \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 #############################################

@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     coreutils \
     procps \
     curl \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Install supercronic (cron replacement that runs as non-root)

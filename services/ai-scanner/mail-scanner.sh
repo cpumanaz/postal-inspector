@@ -283,25 +283,27 @@ analyze_staged_email() {
     log "  -> $verdict | $(sanitize_for_log "$reason" 80)"
 
     # Take action based on verdict
+    # IMPORTANT: Only mark as processed AFTER successful delivery/move
     if [ "$verdict" = "QUARANTINE" ]; then
         log "  ACTION: Moving to Quarantine (skipping sieve)"
         local dest="$MAILDIR/.Quarantine/cur/${filename}"
         if mv "$email_file" "$dest" 2>/dev/null; then
             chmod 660 "$dest" 2>/dev/null || true
+            # Mark as processed only after successful quarantine
+            echo "$filename|$verdict|$(sanitize_for_log "$reason" 50)" >> "$PROCESSED_FILE"
         else
-            log "  ERROR: Quarantine move failed"
+            log "  ERROR: Quarantine move failed, keeping in staging for retry"
         fi
     else
         log "  ACTION: Delivering via LMTP (sieve will route)"
         if deliver_via_lmtp "$email_file"; then
             rm -f "$email_file"
+            # Mark as processed only after successful delivery
+            echo "$filename|$verdict|$(sanitize_for_log "$reason" 50)" >> "$PROCESSED_FILE"
         else
-            log "  ERROR: LMTP delivery failed, keeping in staging"
+            log "  ERROR: LMTP delivery failed, keeping in staging for retry"
         fi
     fi
-
-    # Mark as processed
-    echo "$filename|$verdict|$(sanitize_for_log "$reason" 50)" >> "$PROCESSED_FILE"
 }
 
 #############################################
