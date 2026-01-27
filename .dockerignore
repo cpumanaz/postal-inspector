@@ -1,0 +1,47 @@
+# Secrets - should not be in build context
+secrets/
+
+# Git
+.git/
+.gitignore
+
+# Development
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# Data (mounted at runtime)
+data/
+logs/
+certs/
+
+# Documentation
+docs/
+CLAUDE.md
+LICENSE
+
+# Local config
+.env
+.env.*
+!.env.example
+
+# Other services (not needed for Python containers)
+# Note: services/imap/ is built separately with its own context
+scripts/
+systemd/
+
+# Tests (not needed in production image)
+tests/
+
+# Claude
+.claude/

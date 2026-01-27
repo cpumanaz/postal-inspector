@@ -34,12 +34,8 @@ services:
       - ./services/imap/conf.d:/etc/dovecot/conf.d:ro
       - ./certs/fullchain.pem:/etc/ssl/certs/fullchain.pem:ro
       - ./certs/privkey.pem:/etc/ssl/private/privkey.pem:ro
-    environment:
-      - MAIL_USER=${MAIL_USER}
-      - MAIL_PASS=${MAIL_PASS}
-      - MAIL_DOMAIN=${MAIL_DOMAIN}
-      - ALIAS_PREFIX=${ALIAS_PREFIX:-}
-      - TZ=${TZ:-US/Central}
+    env_file:
+      - .env
     networks:
       - mail
     healthcheck:
@@ -49,44 +45,40 @@ services:
       retries: 3
 
   # ===========================================
-  # Mail Fetcher (Fetchmail)
+  # Mail Processor (Python - replaces mail-fetch + ai-scanner)
   # ===========================================
-  mail-fetch:
-    build: ./services/mail-fetch
+  mail-processor:
+    build:
+      context: .
+      dockerfile: services/python-scanner/Dockerfile
     restart: unless-stopped
     depends_on:
       imap:
         condition: service_healthy
-    # Run as vmail user so files are created with correct ownership
     user: "5000:5000"
-    # SECURITY: Resource limits
     deploy:
       resources:
         limits:
-          memory: 128M
-          cpus: '0.25'
+          memory: 256M
+          cpus: '0.5'
           pids: 50
     volumes:
-      - ./data/maildir:/var/mail:delegated
+      - ./data/maildir:/var/mail:rw
+      - ./logs/mail-processor:/app/logs:rw
+    env_file:
+      - .env
     environment:
-      - UPSTREAM_USER=${UPSTREAM_USER}
-      - UPSTREAM_PASS=${UPSTREAM_PASS}
-      - UPSTREAM_SERVER=${UPSTREAM_SERVER}
-      - UPSTREAM_PORT=${UPSTREAM_PORT:-993}
-      - FETCH_INTERVAL=${FETCH_INTERVAL:-300}
-      - LOCAL_USER=${MAIL_USER}
-      - MAIL_DOMAIN=${MAIL_DOMAIN}
-      - TZ=${TZ:-US/Central}
+      - LMTP_HOST=imap
+      - LMTP_PORT=24
     networks:
       - mail
-    # SECURITY: Restrict capabilities
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
     healthcheck:
-      test: ["CMD", "pgrep", "-x", "fetchmail"]
-      interval: 60s
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
       timeout: 10s
       retries: 3
 
@@ -105,8 +97,8 @@ services:
           pids: 100
     volumes:
       - clamav-data:/var/lib/clamav
-    environment:
-      - TZ=${TZ:-US/Central}
+    env_file:
+      - .env
     networks:
       - mail
     healthcheck:
@@ -117,91 +109,39 @@ services:
       start_period: 120s
 
   # ===========================================
-  # AI Scanner (Claude CLI)
-  # SECURITY HARDENED
-  # ===========================================
-  ai-scanner:
-    build: ./services/ai-scanner
-    restart: unless-stopped
-    depends_on:
-      imap:
-        condition: service_healthy
-    # SECURITY: Resource limits
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-          pids: 100
-    volumes:
-      - ./data/maildir:/var/mail:rw
-      # Claude CLI auto-refreshes tokens, needs write access
-      - ./secrets/claude-credentials.json:/home/vmail/.claude/.credentials.json:rw
-      - ./data/claude-state/ai-scanner:/home/vmail/.claude/state:rw
-      - ./logs/ai-scanner:/app/logs:rw
-    environment:
-      - MAIL_USER=${MAIL_USER}
-      - TZ=${TZ:-US/Central}
-    networks:
-      - mail
-    # SECURITY HARDENING - defense in depth
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    # Note: No cap_add needed - runs as vmail with proper file ownership
-    # Note: read_only disabled because Claude CLI needs to write state files
-    tmpfs:
-      - /tmp:size=64M,mode=1777
-    # SECURITY NOTE: Claude CLI needs network for API access
-    # For additional network egress control, configure host firewall
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "inotifywait"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-
-  # ===========================================
-  # Daily Briefing (Claude CLI)
-  # SECURITY HARDENED
+  # Daily Briefing (Python)
   # ===========================================
   daily-briefing:
-    build: ./services/daily-briefing
+    build:
+      context: .
+      dockerfile: services/python-briefing/Dockerfile
     restart: unless-stopped
     depends_on:
       imap:
         condition: service_healthy
-    # SECURITY: Resource limits
+    user: "5000:5000"
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 256M
           cpus: '0.5'
-          pids: 100
+          pids: 50
     volumes:
-      - ./data/maildir:/var/mail:rw
-      # Claude CLI auto-refreshes tokens, needs write access
-      - ./secrets/claude-credentials.json:/home/vmail/.claude/.credentials.json:rw
-      - ./data/claude-state/daily-briefing:/home/vmail/.claude/state:rw
+      - ./data/maildir:/var/mail:ro
       - ./logs/daily-briefing:/app/logs:rw
+    env_file:
+      - .env
     environment:
-      - MAIL_USER=${MAIL_USER}
-      - MAIL_DOMAIN=${MAIL_DOMAIN}
-      - BRIEFING_HOUR=${BRIEFING_HOUR:-8}
-      - TZ=${TZ:-US/Central}
+      - LMTP_HOST=imap
+      - LMTP_PORT=24
     networks:
       - mail
-    # SECURITY HARDENING - defense in depth
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # Note: No cap_add needed - runs as vmail with proper file ownership
-    # Note: read_only disabled because Claude CLI needs to write state files
-    tmpfs:
-      - /tmp:size=64M,mode=1777
     healthcheck:
-      test: ["CMD", "pgrep", "-f", "supercronic"]
-      interval: 60s
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
       timeout: 10s
       retries: 3

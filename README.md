@@ -103,7 +103,7 @@ Your Claude subscription covers all AI scanning and briefings - no additional AP
 
 ## Under the Hood
 
-Built on proven open-source components: Dovecot (IMAP), Fetchmail, ClamAV, and Claude CLI - all orchestrated with Docker Compose.
+Built on proven open-source components: Dovecot (IMAP), ClamAV, and the Anthropic SDK - all orchestrated with Docker Compose. Uses aioimaplib for IMAP fetching and aiosmtplib for LMTP delivery.
 
 ## License
 

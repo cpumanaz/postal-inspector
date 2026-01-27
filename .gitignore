@@ -1,6 +1,7 @@
 # Environment and secrets
 .env
 secrets/
+SYSTEM-REVIEW*.md
 
 # Mail data
 data/
@@ -21,6 +22,20 @@ certs/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
 
 # Docker
 *.log
