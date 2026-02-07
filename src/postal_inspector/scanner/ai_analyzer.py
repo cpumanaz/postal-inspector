@@ -23,8 +23,9 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-# Regex pattern: VERDICT|reason where reason is 1-80 alphanumeric chars
-VERDICT_PATTERN = re.compile(r"^(SAFE|QUARANTINE)\|([a-zA-Z0-9 ,.\-]{1,80})$")
+# Regex pattern: VERDICT|reason where reason allows common punctuation
+# Allowed: letters, numbers, spaces, and common punctuation: , . - ' " & / ( ) : ; ! ?
+VERDICT_PATTERN = re.compile(r"^(SAFE|QUARANTINE)\|([a-zA-Z0-9 ,.\-'\"&/()\:;!?]{1,100})$")
 
 
 class AIAnalyzer:
