@@ -38,12 +38,23 @@ class MailProcessor:
 
         try:
             await self.imap.connect()
+            await self._write_status()
 
             while not self._shutdown.is_set():
                 try:
                     await self._process_cycle()
+                except DeliveryError as e:
+                    # Connection-related error - try to reconnect
+                    logger.error("cycle_error_reconnecting", error=str(e))
+                    await self._write_status()
+                    if not await self.imap.reconnect():
+                        logger.error("reconnect_failed_waiting",
+                                   wait_seconds=self.settings.fetch_interval)
                 except Exception as e:
-                    logger.error("cycle_error", error=str(e))
+                    logger.error("cycle_error", error=str(e), error_type=type(e).__name__)
+
+                # Write status after each cycle
+                await self._write_status()
 
                 # Wait for next cycle or shutdown
                 with contextlib.suppress(TimeoutError):
@@ -53,6 +64,15 @@ class MailProcessor:
         finally:
             await self.imap.disconnect()
             logger.info("mail_processor_stopped")
+
+    async def _write_status(self) -> None:
+        """Write current status to file for health monitoring."""
+        await self.maildir.write_processor_status(
+            last_successful_fetch=self.imap.last_successful_fetch,
+            consecutive_failures=self.imap.consecutive_failures,
+            last_error=self.imap.last_error,
+            is_connected=self.imap.is_connected,
+        )
 
     async def _process_cycle(self) -> None:
         """Single fetch-scan-deliver cycle.

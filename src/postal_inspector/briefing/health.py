@@ -1,7 +1,7 @@
 """System health monitoring."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -14,6 +14,10 @@ if TYPE_CHECKING:
     from postal_inspector.config import Settings
 
 logger = structlog.get_logger(__name__)
+
+# How long without a successful fetch before we consider it stale
+FETCH_STALE_THRESHOLD = timedelta(hours=1)
+FETCH_CRITICAL_THRESHOLD = timedelta(hours=6)
 
 
 class HealthStatus(str, Enum):
@@ -30,6 +34,9 @@ class HealthReport:
     staging_count: int = 0
     failed_count: int = 0
     lmtp_available: bool = True
+    imap_connected: bool = True
+    last_fetch: datetime | None = None
+    imap_failures: int = 0
     checked_at: datetime = field(default_factory=datetime.now)
 
     def to_html(self) -> str:
@@ -98,12 +105,62 @@ class HealthChecker:
             status = HealthStatus.CRITICAL
             issues.append("<strong>LMTP service unreachable!</strong> Email delivery is broken.")
 
+        # Check 4: Mail processor / IMAP status
+        imap_connected = True
+        last_fetch: datetime | None = None
+        imap_failures = 0
+
+        processor_status = await self.maildir.read_processor_status()
+        if processor_status:
+            imap_connected = processor_status.get("is_connected", True)
+            imap_failures = processor_status.get("consecutive_failures", 0)
+            last_fetch_str = processor_status.get("last_successful_fetch")
+            if last_fetch_str:
+                try:
+                    last_fetch = datetime.fromisoformat(last_fetch_str)
+                except ValueError:
+                    pass
+
+            # Check if IMAP is disconnected
+            if not imap_connected:
+                status = HealthStatus.CRITICAL
+                last_error = processor_status.get("last_error", "Unknown error")
+                issues.append(
+                    f"<strong>Mail fetcher disconnected from Migadu!</strong> Error: {last_error[:100]}"
+                )
+
+            # Check for consecutive failures
+            elif imap_failures >= 3:
+                status = HealthStatus.CRITICAL
+                issues.append(
+                    f"<strong>Mail fetcher has {imap_failures} consecutive failures!</strong> "
+                    "Check upstream IMAP connectivity."
+                )
+
+            # Check if last fetch is stale
+            if last_fetch:
+                time_since_fetch = datetime.now() - last_fetch
+                if time_since_fetch > FETCH_CRITICAL_THRESHOLD:
+                    status = HealthStatus.CRITICAL
+                    hours = int(time_since_fetch.total_seconds() / 3600)
+                    issues.append(
+                        f"<strong>No emails fetched in {hours} hours!</strong> "
+                        "Mail processor may be stuck."
+                    )
+                elif time_since_fetch > FETCH_STALE_THRESHOLD:
+                    if status == HealthStatus.HEALTHY:
+                        status = HealthStatus.WARNING
+                    minutes = int(time_since_fetch.total_seconds() / 60)
+                    warnings.append(f"Last email fetch was {minutes} minutes ago")
+
         logger.info(
             "health_check_complete",
             status=status.value,
             staging=staging_count,
             failed=failed_count,
             lmtp_ok=lmtp_ok,
+            imap_connected=imap_connected,
+            imap_failures=imap_failures,
         )
 
         return HealthReport(
@@ -113,4 +170,7 @@ class HealthChecker:
             staging_count=staging_count,
             failed_count=failed_count,
             lmtp_available=lmtp_ok,
+            imap_connected=imap_connected,
+            last_fetch=last_fetch,
+            imap_failures=imap_failures,
         )

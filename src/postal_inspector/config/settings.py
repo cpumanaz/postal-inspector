@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # FETCH_INTERVAL must be 10-3600 seconds (matches shell validation)
     fetch_interval: int = Field(300, ge=10, le=3600)
     rate_limit_per_minute: int = Field(30, ge=1, le=100)
-    max_retries: int = Field(999999, ge=1, le=999999)
+    max_retries: int = Field(20, ge=1, le=100)
 
     # LMTP delivery settings
     lmtp_host: str = Field("imap")

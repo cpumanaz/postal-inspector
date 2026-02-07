@@ -1,9 +1,11 @@
 """Maildir operations for email storage."""
 
 import hashlib
+import json
 import os
 import socket
 import time
+from datetime import datetime
 from pathlib import Path
 
 import aiofiles
@@ -223,3 +225,37 @@ class MaildirManager:
             return 0
         except Exception:
             return 0
+
+    async def write_processor_status(
+        self,
+        last_successful_fetch: datetime | None,
+        consecutive_failures: int,
+        last_error: str | None,
+        is_connected: bool,
+    ) -> None:
+        """Write mail processor status to a JSON file for health monitoring."""
+        status_file = self.staging_dir / ".processor_status.json"
+        status = {
+            "last_successful_fetch": last_successful_fetch.isoformat() if last_successful_fetch else None,
+            "consecutive_failures": consecutive_failures,
+            "last_error": last_error,
+            "is_connected": is_connected,
+            "updated_at": datetime.now().isoformat(),
+        }
+        try:
+            async with aiofiles.open(status_file, "w") as f:
+                await f.write(json.dumps(status))
+        except Exception as e:
+            logger.warning("status_write_failed", error=str(e))
+
+    async def read_processor_status(self) -> dict | None:
+        """Read mail processor status from JSON file."""
+        status_file = self.staging_dir / ".processor_status.json"
+        try:
+            if await aiofiles.os.path.exists(status_file):
+                async with aiofiles.open(status_file, "r") as f:
+                    content = await f.read()
+                return json.loads(content)
+        except Exception as e:
+            logger.warning("status_read_failed", error=str(e))
+        return None
