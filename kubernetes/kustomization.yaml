@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: postal-inspector
+
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - configmap.yaml
+  - imap-deployment.yaml
+  - mail-processor-deployment.yaml
+  - antivirus-deployment.yaml
+  - daily-briefing-deployment.yaml
+  # TLS for IMAPS is NOT in this base. Provide the `imap-tls` secret yourself:
+  #   - via cert-manager: copy certificate.example.yaml -> certificate.yaml,
+  #     set your domain + ClusterIssuer, and add it to this list, OR
+  #   - manually: kubectl -n postal-inspector create secret tls imap-tls \
+  #       --cert=fullchain.pem --key=privkey.pem
+
+# The Secret (ANTHROPIC_API_KEY, MAIL_USER, MAIL_PASS, MAIL_DOMAIN, UPSTREAM_*)
+# is generated from your local kubernetes/.env (gitignored). Copy .env.example
+# to .env and fill it in before deploying.
+secretGenerator:
+  - name: postal-inspector-secrets
+    envs:
+      - .env
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+# Build the images locally (see kubernetes/README.md) then point these at your
+# registry/tag. With a local single-node cluster you can keep the defaults and
+# import the images into the node's container runtime instead of a registry.
+images:
+  - name: postal-inspector-imap
+    newTag: latest
+  - name: postal-inspector-mail-processor
+    newTag: latest
+  - name: postal-inspector-daily-briefing
+    newTag: latest

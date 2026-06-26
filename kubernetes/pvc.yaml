@@ -1,0 +1,27 @@
+# Maildir storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: maildir
+  namespace: postal-inspector
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # storageClassName: ""   # uses cluster default; uncomment + set your StorageClass
+  resources:
+    requests:
+      storage: 5Gi
+---
+# ClamAV virus signatures
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clamav-data
+  namespace: postal-inspector
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # storageClassName: ""   # uses cluster default; uncomment + set your StorageClass
+  resources:
+    requests:
+      storage: 2Gi

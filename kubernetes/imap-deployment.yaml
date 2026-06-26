@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imap
+  namespace: postal-inspector
+  labels:
+    app: imap
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: imap
+  template:
+    metadata:
+      labels:
+        app: imap
+      annotations:
+        secret.reloader.stakater.com/reload: "imap-tls"
+    spec:
+      hostname: mail
+      containers:
+        - name: imap
+          image: postal-inspector-imap:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: imap
+              containerPort: 143
+            - name: imaps
+              containerPort: 993
+            - name: lmtp
+              containerPort: 24
+          envFrom:
+            - secretRef:
+                name: postal-inspector-secrets
+            - configMapRef:
+                name: postal-inspector-config
+          volumeMounts:
+            - name: maildir
+              mountPath: /var/mail
+            - name: tls
+              mountPath: /etc/ssl/certs/fullchain.pem
+              subPath: tls.crt
+              readOnly: true
+            - name: tls
+              mountPath: /etc/ssl/private/privkey.pem
+              subPath: tls.key
+              readOnly: true
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          readinessProbe:
+            exec:
+              command: ["doveadm", "service", "status"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            exec:
+              command: ["doveadm", "service", "status"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+      volumes:
+        - name: maildir
+          persistentVolumeClaim:
+            claimName: maildir
+        - name: tls
+          secret:
+            secretName: imap-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: imap
+  namespace: postal-inspector
+  labels:
+    app: imap
+  # To publish a public DNS name or pin an address, add provider-specific
+  # annotations here (e.g. external-dns, MetalLB) — intentionally omitted for
+  # portability. On bare metal without a LoadBalancer, change type to NodePort.
+spec:
+  type: LoadBalancer
+  selector:
+    app: imap
+  ports:
+    - name: imaps
+      port: 993
+      targetPort: 993
+      protocol: TCP
+    - name: lmtp
+      port: 24
+      targetPort: 24
+      protocol: TCP

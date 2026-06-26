@@ -1,0 +1,22 @@
+# OPTIONAL — cert-manager Certificate for the IMAPS TLS keypair.
+#
+# Only useful if you run cert-manager with a ClusterIssuer. Copy this to
+# certificate.yaml, set your domain and issuer, add `- certificate.yaml` to the
+# resources list in kustomization.yaml, and cert-manager will populate the
+# `imap-tls` secret the imap Deployment mounts.
+#
+# Not using cert-manager? Skip this and create the secret yourself:
+#   kubectl -n postal-inspector create secret tls imap-tls \
+#     --cert=fullchain.pem --key=privkey.pem
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: imap-tls
+  namespace: postal-inspector
+spec:
+  secretName: imap-tls
+  issuerRef:
+    name: letsencrypt-production   # your ClusterIssuer
+    kind: ClusterIssuer
+  dnsNames:
+    - mail.example.com             # the public hostname clients connect to

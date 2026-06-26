@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postal-inspector-config
+  namespace: postal-inspector
+# Non-secret runtime tunables. Secrets (API key, mailbox/upstream credentials,
+# MAIL_DOMAIN, MAIL_USER) come from the generated `postal-inspector-secrets`
+# Secret (see kustomization.yaml + .env.example) — not here.
+data:
+  TZ: "UTC"               # e.g. "America/Chicago"
+  ALIAS_PREFIX: ""        # set e.g. "folder-" to enable alias-based folder routing
+  FETCH_INTERVAL: "60"    # seconds between upstream IMAP polls
+  MAX_RETRIES: "20"       # delivery retries before moving to .failed
+  BRIEFING_HOUR: "8"      # local hour for the daily briefing
+  LMTP_HOST: "imap"       # internal LMTP service name (the imap Service)
+  LMTP_PORT: "24"

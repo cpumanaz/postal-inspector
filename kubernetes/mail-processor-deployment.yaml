@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mail-processor
+  namespace: postal-inspector
+  labels:
+    app: mail-processor
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mail-processor
+  template:
+    metadata:
+      labels:
+        app: mail-processor
+    spec:
+      securityContext:
+        runAsUser: 5000
+        runAsGroup: 5000
+        fsGroup: 5000
+      containers:
+        - name: mail-processor
+          image: postal-inspector-mail-processor:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: postal-inspector-secrets
+            - configMapRef:
+                name: postal-inspector-config
+          volumeMounts:
+            - name: maildir
+              mountPath: /var/mail
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import sys; sys.exit(0)"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import sys; sys.exit(0)"]
+            initialDelaySeconds: 60
+            periodSeconds: 60
+      volumes:
+        - name: maildir
+          persistentVolumeClaim:
+            claimName: maildir

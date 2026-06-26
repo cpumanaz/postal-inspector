@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: antivirus
+  namespace: postal-inspector
+  labels:
+    app: antivirus
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: antivirus
+  template:
+    metadata:
+      labels:
+        app: antivirus
+    spec:
+      containers:
+        - name: clamav
+          image: clamav/clamav:1.4
+          ports:
+            - name: clamd
+              containerPort: 3310
+          volumeMounts:
+            - name: clamav-data
+              mountPath: /var/lib/clamav
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "200m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          readinessProbe:
+            exec:
+              command: ["clamdscan", "--ping", "3"]
+            initialDelaySeconds: 60
+            periodSeconds: 60
+          livenessProbe:
+            exec:
+              command: ["clamdscan", "--ping", "3"]
+            initialDelaySeconds: 90
+            periodSeconds: 120
+      volumes:
+        - name: clamav-data
+          persistentVolumeClaim:
+            claimName: clamav-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: antivirus
+  namespace: postal-inspector
+  labels:
+    app: antivirus
+spec:
+  type: ClusterIP
+  selector:
+    app: antivirus
+  ports:
+    - name: clamd
+      port: 3310
+      targetPort: 3310

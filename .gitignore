@@ -41,5 +41,3 @@ htmlcov/
 # Docker
 *.log
 
-# Host-specific deployment manifests (keep local)
-kubernetes/
