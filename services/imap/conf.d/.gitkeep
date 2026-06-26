@@ -1,0 +1,2 @@
+# This directory is for optional Dovecot configuration overrides
+# Add .conf files here to extend the base configuration

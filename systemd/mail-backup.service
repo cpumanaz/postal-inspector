@@ -1,0 +1,13 @@
+[Unit]
+Description=Postal Inspector Backup
+After=postal-inspector.service
+Requires=postal-inspector.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/postal-inspector/scripts/backup.sh
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
