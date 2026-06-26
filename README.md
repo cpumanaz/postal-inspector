@@ -8,13 +8,17 @@ Tired of phishing emails slipping through? Want an AI assistant that reads your 
 
 ### Smarter Threat Detection
 
-Traditional spam filters use rules and blocklists. They catch obvious spam but miss sophisticated attacks. Claude AI actually *reads* your email and *reasons* about it:
+Traditional spam filters use rules and blocklists. Postal Inspector verifies every message in **two layers**:
+
+**1. Cryptographic authentication (deterministic).** It checks SPF/DKIM/DMARC alignment from the trustworthy `Authentication-Results` header. A forged "From" almost always fails DMARC, so spoofed senders are caught with certainty — not guesswork. (It keys on DKIM *alignment*, not SPF, so legitimately *forwarded* mail isn't false-flagged.)
+
+**2. AI reasoning (Claude).** For authenticated mail, Claude actually *reads* and *reasons* about intent:
 
 - "This email claims to be from Microsoft but the domain is `micros0ft.com`"
 - "The sender says they're your CEO, but they're asking for gift cards via a Gmail address"
 - "This 'invoice' attachment has an unusual filename pattern common in malware"
 
-**Rule-based filters see patterns. AI understands intent.**
+**Rule-based filters see patterns. Postal Inspector verifies identity, then understands intent.**
 
 ### Your Personal Email Assistant
 
@@ -56,13 +60,14 @@ Your email stays on your infrastructure. No third-party cloud scanning your mess
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-Mail is scanned *before* it reaches your inbox, not after. If the AI is uncertain or something fails, the email goes to Quarantine - never delivered by default. Suspicious mail can't slip through due to errors.
+Mail is scanned *before* it reaches your inbox, not after — first its sender authentication (DMARC/DKIM) is verified, then Claude analyzes the content. If the AI is uncertain or something fails, the email goes to Quarantine - never delivered by default. Suspicious mail can't slip through due to errors.
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| **AI Security Scanner** | Every email analyzed for threats in real-time |
+| **Sender Authentication** | DMARC/SPF/DKIM verified deterministically before content analysis — spoofing caught with certainty |
+| **AI Security Scanner** | Authenticated mail analyzed for threats in real-time by Claude |
 | **Daily Briefings** | Morning summary of what needs your attention |
 | **Virus Scanning** | Attachments checked before delivery |
 | **Instant Processing** | New mail scanned immediately, not on a schedule |
@@ -70,7 +75,8 @@ Mail is scanned *before* it reaches your inbox, not after. If the AI is uncertai
 
 ### What the Scanner Catches
 
-- Fake domains (`micros0ft.com`, `amaz0n.com`)
+- Spoofed senders (failed DMARC/DKIM — the "From" is forged)
+- Fake / look-alike domains (`micros0ft.com`, `amaz0n.com`)
 - Sender address tricks (reply goes somewhere different than it appears)
 - Urgency tactics ("Act now!", "Account suspended")
 - Credential harvesting ("Verify your password")
@@ -88,22 +94,24 @@ Mail is scanned *before* it reaches your inbox, not after. If the AI is uncertai
 
 ## Requirements
 
-- Linux server with Docker 20.10+ and Docker Compose 2.0+
-- [Claude subscription](https://claude.ai) (Pro, Max, or Max 200)
+- Linux server with Docker 20.10+ and Docker Compose 2.0+ — *or* a Kubernetes cluster (see below)
+- An [Anthropic API key](https://console.anthropic.com/) for AI scanning
 - Domain name with DNS control
 - TLS certificate for your mail domain
 - 1GB+ RAM (ClamAV needs ~512MB)
 - Upstream IMAP provider (Gmail, O365, Fastmail, etc.)
 
-Your Claude subscription covers all AI scanning and briefings - no additional API costs.
+AI scanning uses the Anthropic API and is billed per token. For personal mail volume this is typically a few cents to a couple of dollars a month. The model is configurable via `ANTHROPIC_MODEL` (default: `claude-opus-4-8`).
 
 ## Get Started
 
-**[Installation Guide →](docs/GETTING-STARTED.md)**
+**[Installation Guide → (Docker Compose)](docs/GETTING-STARTED.md)**
+
+Running on Kubernetes? See **[kubernetes/README.md](kubernetes/README.md)** for a portable, host-agnostic kustomize deployment.
 
 ## Under the Hood
 
-Built on proven open-source components: Dovecot (IMAP), ClamAV, and the Anthropic SDK - all orchestrated with Docker Compose. Uses aioimaplib for IMAP fetching and aiosmtplib for LMTP delivery.
+Built on proven open-source components: Dovecot (IMAP), ClamAV, and the Anthropic SDK. Scanning combines a deterministic DMARC/DKIM authentication gate with Claude content analysis — **fail-closed** (quarantine on any error) and **retain-by-default** (mail is never deleted). Async throughout: aioimaplib for IMAP fetching, aiosmtplib for LMTP delivery. Deploy with **Docker Compose** or **Kubernetes** (kustomize).
 
 ## License
 
