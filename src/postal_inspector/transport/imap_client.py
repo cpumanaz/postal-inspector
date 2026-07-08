@@ -81,15 +81,14 @@ class IMAPFetcher:
 
         for attempt in range(1, self.MAX_RECONNECT_ATTEMPTS + 1):
             backoff = min(
-                self.INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1)),
-                self.MAX_BACKOFF_SECONDS
+                self.INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1)), self.MAX_BACKOFF_SECONDS
             )
 
             logger.info(
                 "imap_reconnecting",
                 attempt=attempt,
                 max_attempts=self.MAX_RECONNECT_ATTEMPTS,
-                backoff_seconds=backoff
+                backoff_seconds=backoff,
             )
 
             try:
@@ -104,7 +103,7 @@ class IMAPFetcher:
         logger.error(
             "imap_reconnect_failed",
             attempts=self.MAX_RECONNECT_ATTEMPTS,
-            consecutive_failures=self._consecutive_failures
+            consecutive_failures=self._consecutive_failures,
         )
         return False
 
@@ -119,6 +118,8 @@ class IMAPFetcher:
 
     async def _ensure_archive_folder(self) -> None:
         """Ensure Archive folder exists on upstream server."""
+        if self._client is None:
+            return
         try:
             # Check if Archive folder exists
             status, data = await self._client.list("", "Archive")
@@ -158,15 +159,19 @@ class IMAPFetcher:
             for msg_id in message_ids:
                 try:
                     status, msg_data = await self._client.fetch(msg_id, "(RFC822)")
-                    if status == "OK" and msg_data:
-                        # aioimaplib returns [bytes, bytearray, bytes, bytes]
-                        # The email content is in the bytearray (index 1)
-                        if len(msg_data) >= 2 and isinstance(msg_data[1], (bytes, bytearray)):
-                            raw_email = bytes(msg_data[1])
-                            logger.info("email_fetched", msg_id=msg_id, size=len(raw_email))
-                            self._last_successful_fetch = datetime.now()
-                            yield (msg_id, raw_email)
-                            break
+                    # aioimaplib returns [bytes, bytearray, bytes, bytes]; the email
+                    # content is in the bytearray (index 1).
+                    if (
+                        status == "OK"
+                        and msg_data
+                        and len(msg_data) >= 2
+                        and isinstance(msg_data[1], (bytes, bytearray))
+                    ):
+                        raw_email = bytes(msg_data[1])
+                        logger.info("email_fetched", msg_id=msg_id, size=len(raw_email))
+                        self._last_successful_fetch = datetime.now()
+                        yield (msg_id, raw_email)
+                        break
                 except Exception as e:
                     logger.error("imap_fetch_failed", msg_id=msg_id, error=str(e))
                     continue

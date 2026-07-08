@@ -2,11 +2,20 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anthropic
 import pytest
 
 from postal_inspector.models import ParsedEmail
-from postal_inspector.scanner.ai_analyzer import AIAnalyzer
+from postal_inspector.scanner.ai_analyzer import AIAnalyzer, _summarize_api_error
 from postal_inspector.scanner.verdict import Verdict
+
+
+class _FakeAPIError(anthropic.APIError):
+    """Minimal real anthropic.APIError subclass for exercising the HOLD path."""
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        self.status_code = status_code
+        Exception.__init__(self, message)
 
 
 @pytest.fixture
@@ -140,3 +149,43 @@ class TestEmailAnalysis:
 
                 assert result.verdict == Verdict.QUARANTINE
                 assert "credential" in result.reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_api_error_holds_not_quarantines(
+        self, mock_settings: MagicMock, sample_email: ParsedEmail
+    ) -> None:
+        """API/billing errors must HOLD (retry later), never QUARANTINE valid mail."""
+        analyzer = AIAnalyzer(mock_settings)
+        analyzer.rate_limiter.timestamps.clear()
+        analyzer._call_api = AsyncMock(  # type: ignore[method-assign]
+            side_effect=_FakeAPIError(
+                "Error code: 400 - Your credit balance is too low to access the "
+                "Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+                status_code=400,
+            )
+        )
+
+        result = await analyzer.analyze_email(sample_email)
+
+        assert result.verdict == Verdict.HOLD
+        assert "credit balance" in result.reason.lower()
+
+
+class TestSummarizeApiError:
+    """Test the human-readable API error summarizer."""
+
+    def test_credit_balance(self) -> None:
+        err = _FakeAPIError("400 - Your credit balance is too low", status_code=400)
+        assert "credit balance exhausted" in _summarize_api_error(err).lower()
+
+    def test_auth_error(self) -> None:
+        err = _FakeAPIError("unauthorized", status_code=401)
+        assert "authentication failed" in _summarize_api_error(err).lower()
+
+    def test_rate_limit(self) -> None:
+        err = _FakeAPIError("slow down", status_code=429)
+        assert "rate limited" in _summarize_api_error(err).lower()
+
+    def test_server_error(self) -> None:
+        err = _FakeAPIError("boom", status_code=503)
+        assert "server error" in _summarize_api_error(err).lower()

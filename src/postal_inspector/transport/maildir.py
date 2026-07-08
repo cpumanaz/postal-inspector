@@ -1,5 +1,6 @@
 """Maildir operations for email storage."""
 
+import contextlib
 import hashlib
 import json
 import os
@@ -7,6 +8,7 @@ import socket
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import aiofiles
 import aiofiles.os
@@ -72,10 +74,8 @@ class MaildirManager:
             logger.error("staging_save_failed", error=str(e))
             # Clean up partial file if it exists
             if dest_path.exists():
-                try:
+                with contextlib.suppress(Exception):
                     await aiofiles.os.remove(dest_path)
-                except Exception:
-                    pass
             raise DeliveryError(f"Failed to save to staging: {e}")
 
     async def remove_from_staging(self, filename: str) -> None:
@@ -117,8 +117,7 @@ class MaildirManager:
         emails = []
         try:
             staging_files = [
-                f for f in self.staging_dir.iterdir()
-                if f.is_file() and f.suffix == ".mail"
+                f for f in self.staging_dir.iterdir() if f.is_file() and f.suffix == ".mail"
             ]
 
             for file_path in staging_files:
@@ -232,14 +231,29 @@ class MaildirManager:
         consecutive_failures: int,
         last_error: str | None,
         is_connected: bool,
+        last_api_error: str | None = None,
+        last_api_error_at: datetime | None = None,
+        held_count: int = 0,
+        tokens_input_today: int = 0,
+        tokens_output_today: int = 0,
+        scans_today: int = 0,
     ) -> None:
         """Write mail processor status to a JSON file for health monitoring."""
         status_file = self.staging_dir / ".processor_status.json"
         status = {
-            "last_successful_fetch": last_successful_fetch.isoformat() if last_successful_fetch else None,
+            "last_successful_fetch": last_successful_fetch.isoformat()
+            if last_successful_fetch
+            else None,
             "consecutive_failures": consecutive_failures,
             "last_error": last_error,
             "is_connected": is_connected,
+            # AI scanner API health + token usage (read by the daily briefing).
+            "last_api_error": last_api_error,
+            "last_api_error_at": last_api_error_at.isoformat() if last_api_error_at else None,
+            "held_count": held_count,
+            "tokens_input_today": tokens_input_today,
+            "tokens_output_today": tokens_output_today,
+            "scans_today": scans_today,
             "updated_at": datetime.now().isoformat(),
         }
         try:
@@ -248,14 +262,15 @@ class MaildirManager:
         except Exception as e:
             logger.warning("status_write_failed", error=str(e))
 
-    async def read_processor_status(self) -> dict | None:
+    async def read_processor_status(self) -> dict[str, Any] | None:
         """Read mail processor status from JSON file."""
         status_file = self.staging_dir / ".processor_status.json"
         try:
             if await aiofiles.os.path.exists(status_file):
-                async with aiofiles.open(status_file, "r") as f:
+                async with aiofiles.open(status_file) as f:
                     content = await f.read()
-                return json.loads(content)
+                data: dict[str, Any] = json.loads(content)
+                return data
         except Exception as e:
             logger.warning("status_read_failed", error=str(e))
         return None

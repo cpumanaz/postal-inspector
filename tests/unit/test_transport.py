@@ -235,6 +235,27 @@ class TestMaildirManager:
 # ==============================================================================
 
 
+def _make_lmtp_success_client() -> MagicMock:
+    """Build a mock aiosmtplib client for the manual LMTP command flow (all-OK).
+
+    The current LMTPDelivery.deliver() does not use sendmail(); it drives the
+    protocol manually: connect -> execute_command(LHLO/MAIL FROM/RCPT/DATA) ->
+    transport.write(body) -> protocol.read_response() -> quit().
+    """
+    client = MagicMock()
+    client.connect = AsyncMock()
+    # Responses for LHLO(250), MAIL FROM(250), RCPT TO(250), DATA(354), in order.
+    client.execute_command = AsyncMock(
+        side_effect=[(250, "ok"), (250, "ok"), (250, "ok"), (354, "go ahead")]
+    )
+    client.transport = MagicMock()  # transport.write is synchronous
+    client.protocol = MagicMock()
+    client.protocol.read_response = AsyncMock(return_value=(250, "delivered"))
+    client.quit = AsyncMock()
+    client.close = MagicMock()
+    return client
+
+
 class TestLMTPDelivery:
     """Tests for LMTPDelivery class."""
 
@@ -266,40 +287,32 @@ class TestLMTPDelivery:
 
     @pytest.mark.asyncio
     async def test_deliver_success(self, lmtp_client) -> None:
-        """Test successful email delivery."""
+        """Test successful email delivery via the manual LMTP command flow."""
         with patch("postal_inspector.transport.lmtp_client.aiosmtplib") as mock_smtp:
-            # Mock successful SMTP connection and sendmail
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client.sendmail = AsyncMock()
+            mock_client = _make_lmtp_success_client()
             mock_smtp.SMTP.return_value = mock_client
 
-            raw_email = b"From: test@example.com\nSubject: Test\n\nBody"
+            raw_email = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
             result = await lmtp_client.deliver(raw_email)
 
             assert result is True
-            mock_client.sendmail.assert_called_once_with(
-                "",  # Empty envelope sender
-                ["testuser"],
-                raw_email,
-            )
+            mock_client.connect.assert_awaited_once()
+            # Body is written to the transport, terminated by the DATA end marker.
+            mock_client.transport.write.assert_called_once()
+            written = mock_client.transport.write.call_args[0][0]
+            assert written.endswith(b".\r\n")
 
     @pytest.mark.asyncio
     async def test_deliver_uses_empty_envelope_sender(self, lmtp_client) -> None:
         """Test that delivery uses empty envelope sender (MAIL FROM:<>)."""
         with patch("postal_inspector.transport.lmtp_client.aiosmtplib") as mock_smtp:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client.sendmail = AsyncMock()
+            mock_client = _make_lmtp_success_client()
             mock_smtp.SMTP.return_value = mock_client
 
             await lmtp_client.deliver(b"email content")
 
-            # First argument to sendmail should be empty string
-            call_args = mock_client.sendmail.call_args
-            assert call_args[0][0] == ""
+            # The MAIL FROM command must use an empty sender (bounce-safe).
+            mock_client.execute_command.assert_any_call(b"MAIL FROM:<>")
 
     @pytest.mark.asyncio
     async def test_deliver_permanent_failure_raises_delivery_error(self, lmtp_client) -> None:
@@ -307,11 +320,9 @@ class TestLMTPDelivery:
         import aiosmtplib
 
         with patch("postal_inspector.transport.lmtp_client.aiosmtplib") as mock_smtp:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            # Simulate 550 permanent failure
-            mock_client.sendmail = AsyncMock(
+            mock_client = _make_lmtp_success_client()
+            # Simulate a 550 permanent failure during the command exchange.
+            mock_client.execute_command = AsyncMock(
                 side_effect=aiosmtplib.SMTPResponseException(550, "User not found")
             )
             mock_smtp.SMTP.return_value = mock_client
@@ -328,11 +339,9 @@ class TestLMTPDelivery:
         import aiosmtplib
 
         with patch("postal_inspector.transport.lmtp_client.aiosmtplib") as mock_smtp:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            # Simulate 451 temporary failure
-            mock_client.sendmail = AsyncMock(
+            mock_client = _make_lmtp_success_client()
+            # Simulate a 451 temporary failure during the command exchange.
+            mock_client.execute_command = AsyncMock(
                 side_effect=aiosmtplib.SMTPResponseException(451, "Try again later")
             )
             mock_smtp.SMTP.return_value = mock_client
@@ -392,10 +401,11 @@ class TestLMTPDelivery:
     async def test_check_connection_failure(self, lmtp_client) -> None:
         """Test failed connection check."""
         with patch("postal_inspector.transport.lmtp_client.aiosmtplib") as mock_smtp:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(
+            mock_client = MagicMock()
+            mock_client.connect = AsyncMock(
                 side_effect=ConnectionRefusedError("Connection refused")
             )
+            mock_client.quit = AsyncMock()
             mock_smtp.SMTP.return_value = mock_client
 
             result = await lmtp_client.check_connection()
@@ -406,19 +416,17 @@ class TestLMTPDelivery:
     async def test_deliver_smtp_configuration(self, lmtp_client) -> None:
         """Test that SMTP is configured correctly for LMTP."""
         with patch("postal_inspector.transport.lmtp_client.aiosmtplib") as mock_smtp:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client.sendmail = AsyncMock()
+            mock_client = _make_lmtp_success_client()
             mock_smtp.SMTP.return_value = mock_client
 
             await lmtp_client.deliver(b"email")
 
-            # Verify SMTP was initialized with correct parameters
+            # Verify SMTP was initialized with correct parameters (plain LMTP, no TLS)
             mock_smtp.SMTP.assert_called_once_with(
                 hostname="localhost",
                 port=24,
                 use_tls=False,
+                start_tls=False,
                 timeout=10,
             )
 
@@ -554,28 +562,24 @@ class TestIMAPFetcher:
 
     @pytest.mark.asyncio
     async def test_fetch_new_messages_success(self, imap_fetcher) -> None:
-        """Test successfully fetching new messages."""
+        """Test fetching yields (msg_id, raw_email) and stops after the first success."""
         mock_client = AsyncMock()
         mock_client.select = AsyncMock()
         mock_client.search = AsyncMock(return_value=("OK", [b"1 2 3"]))
-        # Mock fetch to return email data
+        # aioimaplib fetch returns [envelope-bytes, body-bytearray, closing-bytes].
         mock_client.fetch = AsyncMock(
-            side_effect=[
-                ("OK", [(b"1 RFC822", b"email content 1")]),
-                ("OK", [(b"2 RFC822", b"email content 2")]),
-                ("OK", [(b"3 RFC822", b"email content 3")]),
-            ]
+            return_value=("OK", [b"1 FETCH (RFC822 {15}", bytearray(b"email content 1"), b")"])
         )
         imap_fetcher._client = mock_client
+        imap_fetcher._connected = True
 
         messages = []
         async for msg in imap_fetcher.fetch_new_messages():
             messages.append(msg)
 
-        assert len(messages) == 3
-        assert messages[0] == b"email content 1"
-        assert messages[1] == b"email content 2"
-        assert messages[2] == b"email content 3"
+        # One message per call (fetch-then-delete safety); yielded as a tuple.
+        assert len(messages) == 1
+        assert messages[0] == ("1", b"email content 1")
 
     @pytest.mark.asyncio
     async def test_fetch_new_messages_no_messages(self, imap_fetcher) -> None:
@@ -584,6 +588,7 @@ class TestIMAPFetcher:
         mock_client.select = AsyncMock()
         mock_client.search = AsyncMock(return_value=("OK", [b""]))
         imap_fetcher._client = mock_client
+        imap_fetcher._connected = True
 
         messages = []
         async for msg in imap_fetcher.fetch_new_messages():
@@ -598,6 +603,7 @@ class TestIMAPFetcher:
         mock_client.select = AsyncMock()
         mock_client.search = AsyncMock(return_value=("NO", []))
         imap_fetcher._client = mock_client
+        imap_fetcher._connected = True
 
         messages = []
         async for msg in imap_fetcher.fetch_new_messages():
@@ -607,26 +613,27 @@ class TestIMAPFetcher:
 
     @pytest.mark.asyncio
     async def test_fetch_new_messages_fetch_failure_continues(self, imap_fetcher) -> None:
-        """Test that fetch failure for one message continues to next."""
+        """Test that fetch failure for one message continues to the next."""
         mock_client = AsyncMock()
         mock_client.select = AsyncMock()
         mock_client.search = AsyncMock(return_value=("OK", [b"1 2"]))
-        # First fetch fails, second succeeds
+        # First fetch fails, second succeeds.
         mock_client.fetch = AsyncMock(
             side_effect=[
                 Exception("Fetch failed"),
-                ("OK", [(b"2 RFC822", b"email content 2")]),
+                ("OK", [b"2 FETCH (RFC822 {15}", bytearray(b"email content 2"), b")"]),
             ]
         )
         imap_fetcher._client = mock_client
+        imap_fetcher._connected = True
 
         messages = []
         async for msg in imap_fetcher.fetch_new_messages():
             messages.append(msg)
 
-        # Should get second message despite first failing
+        # Should get second message despite first failing.
         assert len(messages) == 1
-        assert messages[0] == b"email content 2"
+        assert messages[0] == ("2", b"email content 2")
 
     @pytest.mark.asyncio
     async def test_fetch_new_messages_fetch_not_ok(self, imap_fetcher) -> None:
@@ -636,6 +643,7 @@ class TestIMAPFetcher:
         mock_client.search = AsyncMock(return_value=("OK", [b"1"]))
         mock_client.fetch = AsyncMock(return_value=("NO", []))
         imap_fetcher._client = mock_client
+        imap_fetcher._connected = True
 
         messages = []
         async for msg in imap_fetcher.fetch_new_messages():
@@ -699,6 +707,7 @@ class TestIMAPFetcher:
         mock_client.select = AsyncMock()
         mock_client.search = AsyncMock(return_value=("OK", [b""]))
         imap_fetcher._client = mock_client
+        imap_fetcher._connected = True
 
         async for _ in imap_fetcher.fetch_new_messages():
             pass
@@ -706,17 +715,18 @@ class TestIMAPFetcher:
         mock_client.select.assert_called_once_with("INBOX")
 
     @pytest.mark.asyncio
-    async def test_fetch_searches_unseen(self, imap_fetcher) -> None:
-        """Test that fetch_new_messages searches for UNSEEN messages."""
+    async def test_fetch_searches_all(self, imap_fetcher) -> None:
+        """Test that fetch_new_messages searches ALL messages (not just UNSEEN)."""
         mock_client = AsyncMock()
         mock_client.select = AsyncMock()
         mock_client.search = AsyncMock(return_value=("OK", [b""]))
         imap_fetcher._client = mock_client
+        imap_fetcher._connected = True
 
         async for _ in imap_fetcher.fetch_new_messages():
             pass
 
-        mock_client.search.assert_called_once_with("UNSEEN")
+        mock_client.search.assert_called_once_with("ALL")
 
 
 # ==============================================================================
@@ -757,15 +767,12 @@ class TestTransportIntegration:
         # Ensure directories
         await maildir.ensure_directories()
 
-        # Mock LMTP delivery
+        # Mock LMTP delivery (manual command flow)
         with patch("postal_inspector.transport.lmtp_client.aiosmtplib") as mock_smtp:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client.sendmail = AsyncMock()
+            mock_client = _make_lmtp_success_client()
             mock_smtp.SMTP.return_value = mock_client
 
-            raw_email = b"From: test@example.com\nSubject: Test\n\nBody"
+            raw_email = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
 
             # Deliver email
             result = await lmtp.deliver(raw_email)
@@ -808,18 +815,16 @@ class TestTransportIntegration:
 
         await maildir.ensure_directories()
 
-        # Mock LMTP permanent failure
+        # Mock LMTP permanent failure (5xx during the command exchange)
         with patch("postal_inspector.transport.lmtp_client.aiosmtplib") as mock_smtp:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client.sendmail = AsyncMock(
+            mock_client = _make_lmtp_success_client()
+            mock_client.execute_command = AsyncMock(
                 side_effect=aiosmtplib.SMTPResponseException(550, "User unknown")
             )
             mock_smtp.SMTP.return_value = mock_client
             mock_smtp.SMTPResponseException = aiosmtplib.SMTPResponseException
 
-            raw_email = b"From: test@example.com\nSubject: Test\n\nBody"
+            raw_email = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
 
             # Attempt delivery - should raise
             with pytest.raises(DeliveryError):

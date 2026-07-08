@@ -4,7 +4,6 @@ This module provides data classes for representing parsed email
 messages throughout the application.
 """
 
-import re
 from dataclasses import dataclass
 from email import message_from_bytes
 from email.header import decode_header
@@ -49,7 +48,7 @@ class ParsedEmail:
         Returns just the email address for use in LMTP RCPT TO.
         """
         # Use email.utils.parseaddr to properly extract email from header
-        name, address = parseaddr(self.to_addr)
+        _, address = parseaddr(self.to_addr)
         return address if address else self.to_addr
 
     @classmethod
@@ -79,9 +78,7 @@ class ParsedEmail:
                 decoded = []
                 for fragment, charset in parts:
                     if isinstance(fragment, bytes):
-                        decoded.append(
-                            fragment.decode(charset or "utf-8", errors="replace")
-                        )
+                        decoded.append(fragment.decode(charset or "utf-8", errors="replace"))
                     else:
                         decoded.append(fragment)
                 return " ".join(decoded)
@@ -97,8 +94,7 @@ class ParsedEmail:
         return_path = _decode_header(msg.get("Return-Path")) or None
         # Authentication-Results may appear multiple times (one per checking host)
         auth_results = (
-            "; ".join(_decode_header(v) for v in msg.get_all("Authentication-Results", []))
-            or None
+            "; ".join(_decode_header(v) for v in msg.get_all("Authentication-Results", [])) or None
         )
 
         return cls(

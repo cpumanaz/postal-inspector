@@ -43,7 +43,7 @@ def _from_org_domain(from_addr: str) -> str | None:
     return _org_domain(m.group(1)) if m else None
 
 
-def authentication_verdict(email: "ParsedEmail") -> tuple[str, str]:
+def authentication_verdict(email: ParsedEmail) -> tuple[str, str]:
     """Return (status, detail). status in {pass, spoofed, unauthenticated, unknown}."""
     ar = email.auth_results or ""
     if not ar:
