@@ -49,10 +49,10 @@ class TestSettingsValidation:
         assert settings.upstream_port == 993
         assert settings.fetch_interval == 300
         assert settings.rate_limit_per_minute == 30
-        assert settings.max_retries == 5
+        assert settings.max_retries == 20
         assert settings.lmtp_host == "imap"
         assert settings.lmtp_port == 24
-        assert settings.anthropic_model == "claude-sonnet-4-20250514"
+        assert settings.anthropic_model == "claude-opus-4-8"
         assert settings.ai_timeout == 45
         assert settings.briefing_hour == 8
         assert settings.maildir_path == "/var/mail"
@@ -505,7 +505,7 @@ class TestRateLimitValidation:
 
 
 class TestMaxRetriesValidation:
-    """Test max_retries validation (1-10)."""
+    """Test max_retries validation (1-100)."""
 
     def test_valid_max_retries_minimum(self) -> None:
         """Test minimum max retries (1)."""
@@ -522,7 +522,7 @@ class TestMaxRetriesValidation:
         assert settings.max_retries == 1
 
     def test_valid_max_retries_maximum(self) -> None:
-        """Test maximum max retries (10)."""
+        """Test maximum max retries (100)."""
         settings = create_settings(
             mail_user="testuser",
             mail_pass="secret",
@@ -531,9 +531,9 @@ class TestMaxRetriesValidation:
             upstream_user="user@example.com",
             upstream_pass="pass",
             anthropic_api_key="sk-test",
-            max_retries=10,
+            max_retries=100,
         )
-        assert settings.max_retries == 10
+        assert settings.max_retries == 100
 
     def test_invalid_max_retries_zero(self) -> None:
         """Test invalid max retries (0)."""
@@ -551,7 +551,7 @@ class TestMaxRetriesValidation:
         assert "max_retries" in str(exc_info.value)
 
     def test_invalid_max_retries_too_high(self) -> None:
-        """Test invalid max retries (11)."""
+        """Test invalid max retries (101)."""
         with pytest.raises(ValidationError) as exc_info:
             create_settings(
                 mail_user="testuser",
@@ -561,7 +561,7 @@ class TestMaxRetriesValidation:
                 upstream_user="user@example.com",
                 upstream_pass="pass",
                 anthropic_api_key="sk-test",
-                max_retries=11,
+                max_retries=101,
             )
         assert "max_retries" in str(exc_info.value)
 

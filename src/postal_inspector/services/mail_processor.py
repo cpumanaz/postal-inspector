@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 import structlog
@@ -9,6 +10,7 @@ import structlog
 from postal_inspector.exceptions import DeliveryError
 from postal_inspector.models import ParsedEmail
 from postal_inspector.scanner import AIAnalyzer, Verdict
+from postal_inspector.scanner.verdict import ScanResult
 from postal_inspector.transport import IMAPFetcher, LMTPDelivery, MaildirManager
 
 if TYPE_CHECKING:
@@ -30,6 +32,18 @@ class MailProcessor:
         self._retry_counts: dict[str, int] = {}
         self.max_retries = settings.max_retries
 
+        # API-health / token tracking, surfaced in the shared status file so the
+        # daily-briefing pod can report it (both pods share the maildir PVC).
+        self._last_api_error: str | None = None
+        self._last_api_error_at: datetime | None = None
+        # message_ids currently held awaiting API recovery (size = held count).
+        self._held_message_ids: set[str] = set()
+        # Rolling per-day token usage; resets when the calendar day changes.
+        self._token_date: date | None = None
+        self._tokens_input = 0
+        self._tokens_output = 0
+        self._scans_today = 0
+
     async def run(self) -> None:
         """Main processing loop."""
         logger.info("mail_processor_starting")
@@ -48,8 +62,9 @@ class MailProcessor:
                     logger.error("cycle_error_reconnecting", error=str(e))
                     await self._write_status()
                     if not await self.imap.reconnect():
-                        logger.error("reconnect_failed_waiting",
-                                   wait_seconds=self.settings.fetch_interval)
+                        logger.error(
+                            "reconnect_failed_waiting", wait_seconds=self.settings.fetch_interval
+                        )
                 except Exception as e:
                     logger.error("cycle_error", error=str(e), error_type=type(e).__name__)
 
@@ -72,7 +87,33 @@ class MailProcessor:
             consecutive_failures=self.imap.consecutive_failures,
             last_error=self.imap.last_error,
             is_connected=self.imap.is_connected,
+            last_api_error=self._last_api_error,
+            last_api_error_at=self._last_api_error_at,
+            held_count=len(self._held_message_ids),
+            tokens_input_today=self._tokens_input,
+            tokens_output_today=self._tokens_output,
+            scans_today=self._scans_today,
         )
+
+    def _record_usage(self, result: ScanResult) -> None:
+        """Accumulate token usage for the current day (resets at day rollover)."""
+        if result.input_tokens is None and result.output_tokens is None:
+            return  # No API call was made (e.g. deterministic auth-gate verdict).
+        today = datetime.now().date()
+        if self._token_date != today:
+            self._token_date = today
+            self._tokens_input = 0
+            self._tokens_output = 0
+            self._scans_today = 0
+        self._tokens_input += result.input_tokens or 0
+        self._tokens_output += result.output_tokens or 0
+        self._scans_today += 1
+
+    def _note_api_recovered(self, message_id: str) -> None:
+        """A real API round-trip succeeded: clear the outage flag for this message."""
+        self._last_api_error = None
+        self._last_api_error_at = None
+        self._held_message_ids.discard(message_id)
 
     async def _process_cycle(self) -> None:
         """Single fetch-scan-deliver cycle.
@@ -145,6 +186,28 @@ class MailProcessor:
 
         # AI scan
         result = await self.analyzer.analyze_email(email)
+        self._record_usage(result)
+
+        if result.verdict == Verdict.HOLD:
+            # API/infra failure (e.g. credit balance exhausted): the email was NOT
+            # scanned. Leave it in staging so it is retried next cycle instead of
+            # being quarantined. Record the error so the daily briefing can report it.
+            self._last_api_error = result.reason
+            self._last_api_error_at = datetime.now()
+            self._held_message_ids.add(email.message_id)
+            logger.warning(
+                "email_held",
+                reason=result.reason,
+                held_count=len(self._held_message_ids),
+                subject=email.subject[:50],
+            )
+            # Return the claimed .processing file to .mail so it is picked up again.
+            if staging_filename.endswith(".processing"):
+                await self.maildir.restore_to_staging(staging_filename)
+            return
+
+        # A real verdict means the API round-trip succeeded — clear any outage flag.
+        self._note_api_recovered(email.message_id)
 
         if result.verdict == Verdict.QUARANTINE:
             # Move to quarantine folder
@@ -177,9 +240,7 @@ class MailProcessor:
             # local mailbox (mail_user) in that case so the mail is still delivered.
             recipient: str | None = email.get_recipient_address()
             if "@" not in (recipient or ""):
-                logger.info(
-                    "recipient_fallback_to_local", parsed=(recipient or "")[:60]
-                )
+                logger.info("recipient_fallback_to_local", parsed=(recipient or "")[:60])
                 recipient = None  # LMTPClient delivers to settings.mail_user
             success = await self.lmtp.deliver(raw_email, recipient_override=recipient)
             if success:
@@ -190,7 +251,9 @@ class MailProcessor:
                 return True
             else:
                 # Temporary failure - check retry count
-                return await self._handle_delivery_failure(raw_email, email, "LMTP temporary failure")
+                return await self._handle_delivery_failure(
+                    raw_email, email, "LMTP temporary failure"
+                )
         except DeliveryError as e:
             # Permanent failure - check retry count
             return await self._handle_delivery_failure(raw_email, email, str(e))

@@ -121,6 +121,14 @@ def health(ctx: click.Context) -> None:
     click.echo(f"   Staging queue: {report.staging_count}")
     click.echo(f"   Failed emails: {report.failed_count}")
     click.echo(f"   LMTP available: {'Yes' if report.lmtp_available else 'No'}")
+    scanner_state = f"PAUSED ({report.api_error})" if report.api_error else "OK"
+    click.echo(f"   AI scanner: {scanner_state}")
+    if report.held_count:
+        click.echo(f"   Held for retry: {report.held_count}")
+    click.echo(
+        f"   Tokens today: {report.tokens_input_today + report.tokens_output_today:,} "
+        f"({report.scans_today} scans)"
+    )
 
     if report.issues:
         click.echo("\nIssues:")

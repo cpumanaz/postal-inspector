@@ -114,10 +114,16 @@ class LMTPDelivery:
 
             # Write directly to the socket
             transport = client.transport
-            transport.write(email_data)
+            if transport is None:
+                raise DeliveryError("LMTP transport unavailable after connect")
+            # aiosmtplib types .transport as the abstract BaseTransport, but the live
+            # connection is a writable transport.
+            transport.write(email_data)  # type: ignore[attr-defined]
 
             # Read the response - use execute_command with empty string to just read
             logger.info("lmtp_step_12_reading_delivery_response")
+            if client.protocol is None:
+                raise DeliveryError("LMTP protocol unavailable after connect")
             code, message = await client.protocol.read_response()
             logger.info("lmtp_step_13_delivery_response", code=code, message=message)
             if code not in (250, 251):

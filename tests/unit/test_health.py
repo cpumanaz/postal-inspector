@@ -148,6 +148,8 @@ class TestHealthChecker:
         maildir = AsyncMock()
         maildir.count_staging = AsyncMock(return_value=0)
         maildir.count_failed = AsyncMock(return_value=0)
+        # No status file by default (realistic when the processor hasn't written one).
+        maildir.read_processor_status = AsyncMock(return_value=None)
         return maildir
 
     @pytest.fixture
@@ -371,6 +373,59 @@ class TestHealthChecker:
 
             assert report.status == HealthStatus.CRITICAL
             assert report.staging_count == 51
+
+    @pytest.mark.asyncio
+    async def test_check_all_critical_on_api_error(
+        self, mock_settings: MagicMock, mock_maildir: AsyncMock, mock_lmtp: AsyncMock
+    ) -> None:
+        """An active scanner API error is CRITICAL and reported with held count."""
+        mock_maildir.read_processor_status = AsyncMock(
+            return_value={
+                "is_connected": True,
+                "consecutive_failures": 0,
+                "last_api_error": "Anthropic credit balance exhausted — add credits",
+                "last_api_error_at": "2026-07-08T08:00:00",
+                "held_count": 7,
+                "tokens_input_today": 1000,
+                "tokens_output_today": 50,
+                "scans_today": 4,
+            }
+        )
+
+        with (
+            patch(
+                "postal_inspector.briefing.health.MaildirManager",
+                return_value=mock_maildir,
+            ),
+            patch("postal_inspector.briefing.health.LMTPDelivery", return_value=mock_lmtp),
+        ):
+            checker = HealthChecker(mock_settings)
+            report = await checker.check_all()
+
+            assert report.status == HealthStatus.CRITICAL
+            assert report.api_error is not None
+            assert report.held_count == 7
+            assert any("scanner paused" in i.lower() for i in report.issues)
+            # The scanner block (and held count) must render in the briefing HTML.
+            html = report.to_html()
+            assert "Scanner paused" in html
+            assert "7 email" in html
+            assert "1,050 tokens" in html
+
+    def test_scanner_html_healthy_shows_tokens(self) -> None:
+        """Healthy report still shows an AI Scanner block with token usage."""
+        report = HealthReport(
+            status=HealthStatus.HEALTHY,
+            tokens_input_today=2000,
+            tokens_output_today=100,
+            scans_today=12,
+        )
+        html = report.to_html()
+        assert "All systems operational" in html
+        assert "AI Scanner" in html
+        assert "Scanner operational" in html
+        assert "2,100 tokens" in html
+        assert "12 scan" in html
 
     @pytest.mark.asyncio
     async def test_check_all_warning_not_elevated_when_critical(

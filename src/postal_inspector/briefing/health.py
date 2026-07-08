@@ -1,5 +1,6 @@
 """System health monitoring."""
 
+import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -37,6 +38,13 @@ class HealthReport:
     imap_connected: bool = True
     last_fetch: datetime | None = None
     imap_failures: int = 0
+    # AI scanner API health + token usage
+    api_error: str | None = None
+    api_error_at: datetime | None = None
+    held_count: int = 0
+    tokens_input_today: int = 0
+    tokens_output_today: int = 0
+    scans_today: int = 0
     checked_at: datetime = field(default_factory=datetime.now)
 
     def to_html(self) -> str:
@@ -54,15 +62,50 @@ class HealthReport:
             icon = "&#9889;"
             title = "System Notice"
         else:
-            return """<div style="background-color: #d4edda; border: 1px solid #c3e6cb;
+            alert_html = """<div style="background-color: #d4edda; border: 1px solid #c3e6cb;
                        border-radius: 8px; padding: 12px; margin-bottom: 20px; text-align: center;">
                        <span style="color: #155724;">&#10004;&#65039; All systems operational</span></div>"""
+            return alert_html + self._scanner_html()
 
         items = "".join(f"<li>{issue}</li>" for issue in self.issues + self.warnings)
-        return f"""<div style="background-color: {bg_color}; border: 1px solid {border_color};
+        alert_html = f"""<div style="background-color: {bg_color}; border: 1px solid {border_color};
                    border-radius: 8px; padding: 16px; margin-bottom: 20px;">
                    <h3 style="margin: 0 0 12px 0; color: {text_color};">{icon} {title}</h3>
                    <ul style="margin: 0; padding-left: 20px; color: {text_color};">{items}</ul></div>"""
+        return alert_html + self._scanner_html()
+
+    def _scanner_html(self) -> str:
+        """Always-visible AI scanner status: API health, held mail, token usage.
+
+        This is the visibility the operator lacked when the API silently failed —
+        a billing/API outage now shows up here every day.
+        """
+        if self.api_error:
+            status_line = (
+                f'<span style="color: #721c24;">&#9888;&#65039; <strong>Scanner paused</strong> '
+                f"&mdash; {self.api_error}</span>"
+            )
+            if self.held_count:
+                status_line += (
+                    f'<br><span style="color: #721c24;">{self.held_count} email(s) held for '
+                    f"retry (not delivered, not quarantined) until this clears.</span>"
+                )
+        else:
+            status_line = (
+                '<span style="color: #155724;">&#10004;&#65039; Scanner operational</span>'
+            )
+
+        total_tokens = self.tokens_input_today + self.tokens_output_today
+        usage_line = (
+            f'<span style="color: #666;">Today: {self.scans_today} scan(s), '
+            f"{total_tokens:,} tokens "
+            f"({self.tokens_input_today:,} in / {self.tokens_output_today:,} out)</span>"
+        )
+        return f"""<div style="background-color: #f8f9fa; border: 1px solid #e9ecef;
+                   border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+                   <h3 style="margin: 0 0 8px 0; color: #333; font-size: 15px;">&#129302; AI Scanner</h3>
+                   <p style="margin: 0 0 4px 0; font-size: 13px;">{status_line}</p>
+                   <p style="margin: 0; font-size: 13px;">{usage_line}</p></div>"""
 
 
 class HealthChecker:
@@ -109,6 +152,12 @@ class HealthChecker:
         imap_connected = True
         last_fetch: datetime | None = None
         imap_failures = 0
+        api_error: str | None = None
+        api_error_at: datetime | None = None
+        held_count = 0
+        tokens_input_today = 0
+        tokens_output_today = 0
+        scans_today = 0
 
         processor_status = await self.maildir.read_processor_status()
         if processor_status:
@@ -116,10 +165,27 @@ class HealthChecker:
             imap_failures = processor_status.get("consecutive_failures", 0)
             last_fetch_str = processor_status.get("last_successful_fetch")
             if last_fetch_str:
-                try:
+                with contextlib.suppress(ValueError):
                     last_fetch = datetime.fromisoformat(last_fetch_str)
-                except ValueError:
-                    pass
+
+            # AI scanner API health + token usage
+            api_error = processor_status.get("last_api_error")
+            held_count = processor_status.get("held_count", 0)
+            tokens_input_today = processor_status.get("tokens_input_today", 0)
+            tokens_output_today = processor_status.get("tokens_output_today", 0)
+            scans_today = processor_status.get("scans_today", 0)
+            api_error_at_str = processor_status.get("last_api_error_at")
+            if api_error_at_str:
+                with contextlib.suppress(ValueError):
+                    api_error_at = datetime.fromisoformat(api_error_at_str)
+
+            # An active API error means the scanner cannot classify mail: emails are
+            # being held (paused), not delivered. This is exactly the silent failure
+            # that previously buried valid mail, so surface it as CRITICAL.
+            if api_error:
+                status = HealthStatus.CRITICAL
+                held_note = f" {held_count} email(s) held for retry." if held_count else ""
+                issues.append(f"<strong>AI scanner paused:</strong> {api_error}.{held_note}")
 
             # Check if IMAP is disconnected
             if not imap_connected:
@@ -173,4 +239,10 @@ class HealthChecker:
             imap_connected=imap_connected,
             last_fetch=last_fetch,
             imap_failures=imap_failures,
+            api_error=api_error,
+            api_error_at=api_error_at,
+            held_count=held_count,
+            tokens_input_today=tokens_input_today,
+            tokens_output_today=tokens_output_today,
+            scans_today=scans_today,
         )

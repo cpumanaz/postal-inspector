@@ -28,9 +28,31 @@ logger = structlog.get_logger(__name__)
 # separator and a reason) anywhere near the start of the response. This avoids
 # the previous strict single-line regex, which fail-closed to QUARANTINE on any
 # formatting deviation and caused legitimate mail to be quarantined.
-VERDICT_PATTERN = re.compile(
-    r"\b(SAFE|QUARANTINE)\b[\s:|.\-]*(.{0,100})", re.IGNORECASE
-)
+VERDICT_PATTERN = re.compile(r"\b(SAFE|QUARANTINE)\b[\s:|.\-]*(.{0,100})", re.IGNORECASE)
+
+
+def _summarize_api_error(exc: "anthropic.APIError") -> str:
+    """Turn an Anthropic API error into a short, human-readable reason.
+
+    Detects the common actionable cases (credit balance, auth, rate limit) so the
+    daily briefing can tell the user *what* to fix rather than dumping a raw error.
+    """
+    msg = str(exc)
+    low = msg.lower()
+    status = getattr(exc, "status_code", None)
+
+    if "credit balance is too low" in low or "purchase credits" in low:
+        return "Anthropic credit balance exhausted — add credits to resume scanning"
+    if status == 401 or isinstance(exc, anthropic.AuthenticationError):
+        return "Anthropic API authentication failed — check ANTHROPIC_API_KEY"
+    if status == 429 or isinstance(exc, anthropic.RateLimitError):
+        return "Anthropic API rate limited"
+    if isinstance(exc, (anthropic.APITimeoutError, anthropic.APIConnectionError)):
+        return "Anthropic API unreachable (timeout/connection)"
+    if status is not None and status >= 500:
+        return f"Anthropic API server error ({status})"
+    prefix = f"Anthropic API error ({status}): " if status else "Anthropic API error: "
+    return (prefix + msg)[:120]
 
 
 class AIAnalyzer:
@@ -55,7 +77,7 @@ class AIAnalyzer:
         retry=retry_if_exception_type((anthropic.APITimeoutError, anthropic.APIConnectionError)),
         reraise=True,
     )
-    async def _call_api(self, prompt: str) -> str:
+    async def _call_api(self, prompt: str) -> tuple[str, int, int]:
         """Call Anthropic API with retry logic.
 
         Retries up to 3 times with exponential backoff (2s, 4s, 8s)
@@ -65,7 +87,7 @@ class AIAnalyzer:
             prompt: The prompt to send to Claude.
 
         Returns:
-            The text response from Claude.
+            (response_text, input_tokens, output_tokens).
 
         Raises:
             anthropic.APIError: On API errors after retries exhausted.
@@ -76,9 +98,11 @@ class AIAnalyzer:
             timeout=self.timeout,
             messages=[{"role": "user", "content": prompt}],
         )
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
         content_block = response.content[0]
         if isinstance(content_block, TextBlock):
-            return content_block.text.strip()
+            return content_block.text.strip(), input_tokens, output_tokens
         raise ValueError(f"Unexpected content type: {type(content_block)}")
 
     def _parse_response(self, text: str) -> ScanResult:
@@ -99,7 +123,8 @@ class AIAnalyzer:
         match = VERDICT_PATTERN.search(text)
         if match:
             verdict_str = match.group(1).upper()
-            reason = (match.group(2) or "").strip().strip(":|.-  ")[:100]
+            # Strip any leading/trailing separator characters (each char individually).
+            reason = (match.group(2) or "").strip().strip(":|.-  ")[:100]  # noqa: B005
             verdict = Verdict.SAFE if verdict_str == "SAFE" else Verdict.QUARANTINE
             return ScanResult(
                 verdict=verdict,
@@ -165,23 +190,30 @@ class AIAnalyzer:
         logger.info("scanning_email", subject=email.subject[:50], auth=auth_status)
 
         try:
-            raw_response = await self._call_api(prompt)
+            raw_response, input_tokens, output_tokens = await self._call_api(prompt)
             result = self._parse_response(raw_response)
+            result.input_tokens = input_tokens
+            result.output_tokens = output_tokens
             logger.info(
                 "scan_complete",
                 verdict=result.verdict.value,
                 reason=result.reason,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
             )
             return result
 
         except anthropic.APIError as e:
-            logger.error("ai_api_error", error=str(e))
+            # API/infrastructure failure (billing, auth, rate-limit, timeout, server).
+            # HOLD rather than QUARANTINE: we could not scan, so pause this email in
+            # staging for retry instead of burying legitimate mail. See Verdict.HOLD.
+            logger.error("ai_api_error", error=str(e), error_type=type(e).__name__)
             return ScanResult(
-                verdict=Verdict.QUARANTINE,
-                reason=f"AI API error: {str(e)[:40]}",
+                verdict=Verdict.HOLD,
+                reason=_summarize_api_error(e),
             )
         except Exception as e:
-            # FAIL-CLOSED: Any unexpected error = QUARANTINE
+            # FAIL-CLOSED: Any unexpected (non-API) error = QUARANTINE.
             logger.error("ai_analysis_failed", error=str(e))
             return ScanResult(
                 verdict=Verdict.QUARANTINE,

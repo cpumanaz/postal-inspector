@@ -4,11 +4,10 @@ This module provides data classes for representing parsed email
 messages throughout the application.
 """
 
-import re
 from dataclasses import dataclass
 from email import message_from_bytes
 from email.header import decode_header
-from email.utils import parseaddr
+from email.utils import getaddresses
 
 
 @dataclass
@@ -39,18 +38,21 @@ class ParsedEmail:
     auth_results: str | None = None
 
     def get_recipient_address(self) -> str:
-        """Extract the email address from the To header.
+        """Extract a single deliverable email address from the To header.
 
         Handles formats like:
         - "Name <email@domain.com>"
         - "<email@domain.com>"
         - "email@domain.com"
 
-        Returns just the email address for use in LMTP RCPT TO.
+        Returns the address only when the header contains exactly ONE valid
+        address. For multi-recipient or malformed To headers (e.g. family
+        forwards addressed to several people), returns "" so the caller falls
+        back to local-mailbox delivery instead of building an invalid RCPT TO
+        (which Dovecot rejects with "501 5.5.4 Invalid TO").
         """
-        # Use email.utils.parseaddr to properly extract email from header
-        name, address = parseaddr(self.to_addr)
-        return address if address else self.to_addr
+        valid = [addr for _, addr in getaddresses([self.to_addr or ""]) if "@" in addr]
+        return valid[0] if len(valid) == 1 else ""
 
     @classmethod
     def parse(cls, raw: bytes) -> "ParsedEmail":
@@ -79,9 +81,7 @@ class ParsedEmail:
                 decoded = []
                 for fragment, charset in parts:
                     if isinstance(fragment, bytes):
-                        decoded.append(
-                            fragment.decode(charset or "utf-8", errors="replace")
-                        )
+                        decoded.append(fragment.decode(charset or "utf-8", errors="replace"))
                     else:
                         decoded.append(fragment)
                 return " ".join(decoded)
@@ -97,8 +97,7 @@ class ParsedEmail:
         return_path = _decode_header(msg.get("Return-Path")) or None
         # Authentication-Results may appear multiple times (one per checking host)
         auth_results = (
-            "; ".join(_decode_header(v) for v in msg.get_all("Authentication-Results", []))
-            or None
+            "; ".join(_decode_header(v) for v in msg.get_all("Authentication-Results", [])) or None
         )
 
         return cls(
