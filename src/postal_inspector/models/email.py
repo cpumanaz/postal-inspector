@@ -7,7 +7,7 @@ messages throughout the application.
 from dataclasses import dataclass
 from email import message_from_bytes
 from email.header import decode_header
-from email.utils import parseaddr
+from email.utils import getaddresses
 
 
 @dataclass
@@ -38,18 +38,21 @@ class ParsedEmail:
     auth_results: str | None = None
 
     def get_recipient_address(self) -> str:
-        """Extract the email address from the To header.
+        """Extract a single deliverable email address from the To header.
 
         Handles formats like:
         - "Name <email@domain.com>"
         - "<email@domain.com>"
         - "email@domain.com"
 
-        Returns just the email address for use in LMTP RCPT TO.
+        Returns the address only when the header contains exactly ONE valid
+        address. For multi-recipient or malformed To headers (e.g. family
+        forwards addressed to several people), returns "" so the caller falls
+        back to local-mailbox delivery instead of building an invalid RCPT TO
+        (which Dovecot rejects with "501 5.5.4 Invalid TO").
         """
-        # Use email.utils.parseaddr to properly extract email from header
-        _, address = parseaddr(self.to_addr)
-        return address if address else self.to_addr
+        valid = [addr for _, addr in getaddresses([self.to_addr or ""]) if "@" in addr]
+        return valid[0] if len(valid) == 1 else ""
 
     @classmethod
     def parse(cls, raw: bytes) -> "ParsedEmail":
